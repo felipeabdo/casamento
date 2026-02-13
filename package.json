@@ -9,13 +9,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "react": "^19.2.4",
+    "@google/genai": "^1.40.0",
+    "firebase": "^12.9.0",
     "lucide-react": "^0.563.0",
-    "recharts": "^3.7.0",
+    "qrcode.react": "^4.2.0",
+    "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-router-dom": "^7.13.0",
-    "@google/genai": "^1.40.0",
-    "qrcode.react": "^4.2.0"
+    "recharts": "^3.7.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
