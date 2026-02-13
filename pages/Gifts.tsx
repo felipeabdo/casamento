@@ -6,9 +6,9 @@ import { Gift as GiftIcon, Heart, Copy, CheckCircle, CreditCard, ExternalLink, L
 import { Recorder } from '../components/MediaRecorder';
 
 // --- CONFIGURAÇÃO DO CLOUDINARY ---
-// Preencha com os dados do seu Dashboard do Cloudinary
-const CLOUDINARY_CLOUD_NAME = "Ydzbjlkypw"; // Ex: "joaosilva"
-const CLOUDINARY_UPLOAD_PRESET = "ml_default"; // Ex: "casamento_videos" (Deve ser UNSIGNED)
+// VERIFIQUE SE O PRESET NO PAINEL DO CLOUDINARY ESTÁ COMO "UNSIGNED" (NÃO ASSINADO)
+const CLOUDINARY_CLOUD_NAME = "Ydzbjlkypw"; 
+const CLOUDINARY_UPLOAD_PRESET = "ml_default"; // Se criar um novo preset unsigned, atualize este nome aqui!
 
 export const GiftsPage: React.FC = () => {
   const { gifts, settings, markGiftAsPending, addMessage } = useStore();
@@ -50,10 +50,10 @@ export const GiftsPage: React.FC = () => {
       const formData = new FormData();
       formData.append('file', blob);
       formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-      // Opcional: Adicionar tags para organizar no painel
       formData.append('tags', 'casamento_recados');
       
-      const resourceType = type === 'video' ? 'video' : 'video'; // Cloudinary trata audio como 'video' as vezes, ou 'auto'
+      // 'auto' é mais seguro, pois o Cloudinary detecta o tipo correto (video ou audio) pelo arquivo
+      const resourceType = 'auto'; 
 
       const response = await fetch(
         `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/${resourceType}/upload`,
@@ -65,6 +65,10 @@ export const GiftsPage: React.FC = () => {
 
       if (!response.ok) {
           const errorData = await response.json();
+          // Tratamento específico para o erro comum de configuração
+          if (errorData.error?.message === "Unknown API key") {
+              throw new Error("Erro de Configuração: O Preset do Cloudinary parece estar como 'Signed'. Mude para 'Unsigned' no painel do Cloudinary.");
+          }
           throw new Error(errorData.error?.message || 'Erro no upload para o Cloudinary');
       }
 
@@ -80,8 +84,9 @@ export const GiftsPage: React.FC = () => {
         return;
     }
 
-    if ((mediaBlob && (!CLOUDINARY_CLOUD_NAME || CLOUDINARY_CLOUD_NAME === "YOUR_CLOUD_NAME"))) {
-        alert("Erro de Configuração: O dono do site precisa configurar o Cloudinary no código (Gifts.tsx).");
+    // Validação básica se o usuário esqueceu de configurar
+    if ((CLOUDINARY_CLOUD_NAME as string) === "YOUR_CLOUD_NAME") {
+        alert("Erro: Configure o CLOUDINARY_CLOUD_NAME no arquivo Gifts.tsx");
         return;
     }
 
@@ -100,13 +105,13 @@ export const GiftsPage: React.FC = () => {
 
             setUploadProgress('Enviando para a nuvem...');
             
-            // Upload to Cloudinary instead of Firebase
+            // Upload to Cloudinary
             downloadUrl = await uploadToCloudinary(mediaBlob, mediaType);
             
             console.log("File uploaded successfully:", downloadUrl);
         }
 
-        // 2. Save Message with URL (URL is now from Cloudinary)
+        // 2. Save Message with URL
         if (downloadUrl || (mediaPreview && !mediaBlob)) {
              setUploadProgress('Salvando recado...');
              addMessage({
