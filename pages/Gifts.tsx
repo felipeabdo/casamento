@@ -4,6 +4,8 @@ import { Modal } from '../components/Modal';
 import { QRCodeSVG } from 'qrcode.react';
 import { Gift as GiftIcon, Heart, Copy, CheckCircle, CreditCard, ExternalLink, Loader2 } from 'lucide-react';
 import { Recorder } from '../components/MediaRecorder';
+import { storage } from '../firebaseConfig'; // Import Storage
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 export const GiftsPage: React.FC = () => {
   const { gifts, settings, markGiftAsPending, addMessage } = useStore();
@@ -11,9 +13,14 @@ export const GiftsPage: React.FC = () => {
   
   // States for Purchase Flow
   const [buyerName, setBuyerName] = useState('');
-  const [mediaBase64, setMediaBase64] = useState<string | null>(null);
+  
+  // Media states
+  const [mediaPreview, setMediaPreview] = useState<string | null>(null); // Base64 for instant preview
+  const [mediaBlob, setMediaBlob] = useState<Blob | null>(null); // Real file for upload
   const [mediaType, setMediaType] = useState<'audio' | 'video' | null>(null);
+  
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState('');
   const [showThankYouModal, setShowThankYouModal] = useState(false);
 
   // Toast
@@ -22,8 +29,10 @@ export const GiftsPage: React.FC = () => {
   const handleOpenGift = (giftId: string) => {
     setSelectedGift(giftId);
     setBuyerName('');
-    setMediaBase64(null);
+    setMediaPreview(null);
+    setMediaBlob(null);
     setMediaType(null);
+    setUploadProgress('');
   };
 
   const activeGift = gifts.find(g => g.id === selectedGift);
@@ -34,35 +43,58 @@ export const GiftsPage: React.FC = () => {
     setTimeout(() => setShowToast(false), 5000);
   };
 
-const handleSubmit = async () => {
-    if (!activeGift) return; // Segurança básica
+  const handleSubmit = async () => {
+    if (!activeGift) return;
     
     if (!buyerName.trim()) {
         alert("Por favor, digite seu nome para que os noivos saibam quem enviou!");
-        return; // Para a execução aqui se não tiver nome
+        return;
     }
 
     setIsSubmitting(true);
-    // Simulate network delay
-    setTimeout(() => {
-        // 1. Save Message if exists
-        if (mediaBase64 && mediaType) {
+    setUploadProgress('Processando...');
+
+    try {
+        let downloadUrl = '';
+
+        // 1. Upload Media if exists
+        if (mediaBlob && mediaType) {
+            setUploadProgress('Enviando vídeo/áudio...');
+            const extension = mediaType === 'video' ? 'webm' : 'webm'; // Browser recorder usually outputs webm
+            const fileName = `messages/${Date.now()}_${buyerName.replace(/\s+/g, '_')}.${extension}`;
+            const storageRef = ref(storage, fileName);
+            
+            await uploadBytes(storageRef, mediaBlob);
+            downloadUrl = await getDownloadURL(storageRef);
+            console.log("File uploaded:", downloadUrl);
+        }
+
+        // 2. Save Message with URL
+        if (downloadUrl || (mediaPreview && !mediaBlob)) {
+             // Fallback for audio if logic changes, but we prefer Blob
             addMessage({
                 author: buyerName,
-                type: mediaType,
-                content: mediaBase64,
+                type: mediaType || 'audio',
+                content: downloadUrl, // Save the Firebase URL, not Base64
                 giftId: activeGift.id
             });
         }
 
-        // 2. Mark Gift as Pending
+        // 3. Mark Gift as Pending
         markGiftAsPending(activeGift.id, buyerName);
 
-        // 3. Close Modal
+        setUploadProgress('Concluído!');
+        setTimeout(() => {
+            setIsSubmitting(false);
+            setSelectedGift(null);
+            alert("Obrigado! Avisamos os noivos do seu presente. O vídeo foi salvo com sucesso!");
+        }, 500);
+
+    } catch (error) {
+        console.error("Error submitting gift:", error);
+        alert("Houve um erro ao salvar o vídeo ou o presente. Tente novamente.");
         setIsSubmitting(false);
-        setSelectedGift(null);
-        alert("Obrigado! Avisamos os noivos do seu presente. Assim que confirmado, ele aparecerá como comprado no site.");
-    }, 1000);
+    }
   };
 
   // Helper to get card styles based on status
@@ -128,7 +160,7 @@ const handleSubmit = async () => {
                     <div className="mt-auto w-full">
                         <button
                         onClick={() => isConfirmed ? setShowThankYouModal(true) : handleOpenGift(gift.id)}
-                        disabled={isConfirmed && false} // Keep clickable for Thank You modal
+                        disabled={isConfirmed && false} 
                         className={`w-full font-serif py-3 px-6 transition-colors flex items-center justify-center gap-2 uppercase tracking-widest text-xs
                             ${isConfirmed 
                                 ? 'bg-green-600 text-white cursor-default' 
@@ -149,7 +181,7 @@ const handleSubmit = async () => {
         </div>
       </div>
 
-      {/* Thank You Modal (Clicked on confirmed gift) */}
+      {/* Thank You Modal */}
       <Modal
         isOpen={showThankYouModal}
         onClose={() => setShowThankYouModal(false)}
@@ -222,8 +254,9 @@ const handleSubmit = async () => {
             </div>
 
             {/* Media Recorder */}
-            <Recorder onRecordingComplete={(base64, type) => {
-                setMediaBase64(base64);
+            <Recorder onRecordingComplete={(base64, blob, type) => {
+                setMediaPreview(base64);
+                setMediaBlob(blob);
                 setMediaType(type);
             }} />
 
@@ -231,17 +264,17 @@ const handleSubmit = async () => {
             <div className="pt-4 border-t border-wedding-200">
                 <button
                     onClick={handleSubmit}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting} // Removida a trava !buyerName daqui para mostrar o alert
                     className={`w-full py-3 rounded font-serif uppercase tracking-widest text-sm shadow-md transition-all flex items-center justify-center gap-2
-                        ${isSubmitting || !buyerName 
+                        ${isSubmitting 
                             ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
                             : 'bg-wedding-800 text-white hover:bg-wedding-700'
                         }`}
                 >
                     {isSubmitting ? (
-                        <><Loader2 className="animate-spin" /> Enviando...</>
+                        <><Loader2 className="animate-spin" /> {uploadProgress || 'Enviando...'}</>
                     ) : (
-                        "Já fiz o pagamento"
+                        mediaPreview ? "Confirmar Pagamento e Enviar Vídeo" : "Já fiz o pagamento"
                     )}
                 </button>
                 <p className="text-xs text-center text-wedding-400 mt-2">

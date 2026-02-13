@@ -2,7 +2,8 @@ import React, { useState, useRef } from 'react';
 import { Video, Mic, StopCircle, Play, Trash2, Camera } from 'lucide-react';
 
 interface MediaRecorderProps {
-  onRecordingComplete: (base64: string, type: 'audio' | 'video') => void;
+  // Alterado para receber o Blob (arquivo) também
+  onRecordingComplete: (base64: string, blob: Blob, type: 'audio' | 'video') => void;
 }
 
 export const Recorder: React.FC<MediaRecorderProps> = ({ onRecordingComplete }) => {
@@ -24,7 +25,7 @@ export const Recorder: React.FC<MediaRecorderProps> = ({ onRecordingComplete }) 
 
     try {
       const constraints = selectedMode === 'video' 
-        ? { video: { width: 320, height: 240 }, audio: true } // Low res to save space
+        ? { video: { width: 480, height: 360 }, audio: true } // Melhoramos um pouco a qualidade pois agora vai pro Storage
         : { audio: true };
       
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -34,7 +35,17 @@ export const Recorder: React.FC<MediaRecorderProps> = ({ onRecordingComplete }) 
         videoRef.current.srcObject = stream;
       }
 
-      const mediaRecorder = new MediaRecorder(stream);
+      // Tenta usar codecs eficientes
+      let options = {};
+      if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+        options = { mimeType: 'video/webm;codecs=vp9' };
+      } else if (MediaRecorder.isTypeSupported('video/webm')) {
+        options = { mimeType: 'video/webm' };
+      } else if (MediaRecorder.isTypeSupported('video/mp4')) {
+        options = { mimeType: 'video/mp4' };
+      }
+
+      const mediaRecorder = new MediaRecorder(stream, options);
       mediaRecorderRef.current = mediaRecorder;
       chunksRef.current = [];
 
@@ -45,18 +56,18 @@ export const Recorder: React.FC<MediaRecorderProps> = ({ onRecordingComplete }) 
       };
 
       mediaRecorder.onstop = () => {
-        const type = selectedMode === 'video' ? 'video/webm' : 'audio/webm';
+        const type = selectedMode === 'video' ? mediaRecorder.mimeType || 'video/webm' : 'audio/webm';
         const blob = new Blob(chunksRef.current, { type });
         const url = URL.createObjectURL(blob);
         setPreviewUrl(url);
         
-        // Convert to Base64
+        // Convert to Base64 (for preview consistency) and pass Blob (for upload)
         const reader = new FileReader();
         reader.readAsDataURL(blob);
         reader.onloadend = () => {
             const base64data = reader.result as string;
             setMediaBase64(base64data);
-            onRecordingComplete(base64data, selectedMode);
+            onRecordingComplete(base64data, blob, selectedMode);
         };
         
         // Stop all tracks
