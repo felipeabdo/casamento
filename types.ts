@@ -34,6 +34,8 @@ export interface AppSettings {
   pixKeyType: 'CPF' | 'CNPJ' | 'Email' | 'Phone' | 'Random';
   primaryColor: string;
   adminPassword?: string;
+  loadingTitle?: string;
+  loadingSubtitle?: string;
 }
 
 export interface AppState {
@@ -49,7 +51,9 @@ export const INITIAL_SETTINGS: AppSettings = {
   pixKey: "123.456.789-00",
   pixKeyType: "CPF",
   primaryColor: "#b08d71",
-  adminPassword: "123456"
+  adminPassword: "123456",
+  loadingTitle: "Jéssica & Felipe",
+  loadingSubtitle: "Carregando nossa história..."
 };
 
 export const INITIAL_PAGES: Page[] = [

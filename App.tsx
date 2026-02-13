@@ -1,16 +1,36 @@
-import React from 'react';
-import { HashRouter as Router, Routes, Route } from 'react-router-dom';
-import { StoreProvider } from './store';
+import React, { useState, useEffect } from 'react';
+import { HashRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
+import { StoreProvider, useStore } from './store';
 import { Layout } from './components/Layout';
-import { DynamicPage } from './pages/Home'; // Uses URL to determine content
+import { DynamicPage } from './pages/Home';
 import { GiftsPage } from './pages/Gifts';
 import { TransparencyPage } from './pages/Transparency';
 import { AdminPage } from './pages/Admin';
 import { LoginPage } from './pages/Login';
+import { LoadingScreen } from './components/LoadingScreen';
 
-const App: React.FC = () => {
+// Wrapper component to access Store Context
+const AppContent: React.FC = () => {
+  const { settings } = useStore();
+  const [isLoading, setIsLoading] = useState(true);
+  
+  useEffect(() => {
+    // Force loading screen for at least 2 seconds to mask API load / initial render glitches
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, []);
+
   return (
-    <StoreProvider>
+    <>
+      <LoadingScreen 
+        isVisible={isLoading} 
+        title={settings.loadingTitle || "Jéssica & Felipe"} 
+        subtitle={settings.loadingSubtitle || "Carregando..."} 
+      />
+      
       <Router>
         <Layout>
           <Routes>
@@ -28,6 +48,14 @@ const App: React.FC = () => {
           </Routes>
         </Layout>
       </Router>
+    </>
+  );
+};
+
+const App: React.FC = () => {
+  return (
+    <StoreProvider>
+      <AppContent />
     </StoreProvider>
   );
 };

@@ -266,6 +266,33 @@ export const AdminPage: React.FC = () => {
                  </div>
               </div>
 
+              {/* Loading Screen Settings */}
+              <div className="bg-wedding-50/50 p-6 rounded border border-wedding-200">
+                 <h2 className="text-2xl font-serif text-wedding-800 mb-6 border-b border-wedding-200 pb-2">Tela de Carregamento</h2>
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-bold text-wedding-700 mb-2">Título do Loading</label>
+                      <input 
+                          type="text" 
+                          placeholder="Ex: Jéssica & Felipe"
+                          value={settings.loadingTitle || ''}
+                          onChange={(e) => updateSettings({ loadingTitle: e.target.value })}
+                          className={inputClass}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-wedding-700 mb-2">Subtítulo</label>
+                      <input 
+                          type="text" 
+                          placeholder="Ex: Carregando nossa história..."
+                          value={settings.loadingSubtitle || ''}
+                          onChange={(e) => updateSettings({ loadingSubtitle: e.target.value })}
+                          className={inputClass}
+                      />
+                    </div>
+                 </div>
+              </div>
+
               {/* Home Page Hero Edit */}
               <div className="bg-wedding-50/50 p-6 rounded border border-wedding-200">
                  <h2 className="text-2xl font-serif text-wedding-800 mb-6 border-b border-wedding-200 pb-2">Capa do Site (Página Inicial)</h2>
