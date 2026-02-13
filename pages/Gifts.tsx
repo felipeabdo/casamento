@@ -34,10 +34,12 @@ export const GiftsPage: React.FC = () => {
     setTimeout(() => setShowToast(false), 5000);
   };
 
-  const handleSubmit = async () => {
-    if (!activeGift || !buyerName.trim()) {
-        alert("Por favor, digite seu nome.");
-        return;
+const handleSubmit = async () => {
+    if (!activeGift) return; // Segurança básica
+    
+    if (!buyerName.trim()) {
+        alert("Por favor, digite seu nome para que os noivos saibam quem enviou!");
+        return; // Para a execução aqui se não tiver nome
     }
 
     setIsSubmitting(true);
@@ -229,7 +231,7 @@ export const GiftsPage: React.FC = () => {
             <div className="pt-4 border-t border-wedding-200">
                 <button
                     onClick={handleSubmit}
-                    disabled={isSubmitting || !buyerName}
+                    disabled={isSubmitting}
                     className={`w-full py-3 rounded font-serif uppercase tracking-widest text-sm shadow-md transition-all flex items-center justify-center gap-2
                         ${isSubmitting || !buyerName 
                             ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
