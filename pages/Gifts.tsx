@@ -4,8 +4,11 @@ import { Modal } from '../components/Modal';
 import { QRCodeSVG } from 'qrcode.react';
 import { Gift as GiftIcon, Heart, Copy, CheckCircle, CreditCard, ExternalLink, Loader2 } from 'lucide-react';
 import { Recorder } from '../components/MediaRecorder';
-import { storage } from '../firebaseConfig'; // Import Storage
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+
+// --- CONFIGURAÇÃO DO CLOUDINARY ---
+// Preencha com os dados do seu Dashboard do Cloudinary
+const CLOUDINARY_CLOUD_NAME = "Ydzbjlkypw"; // Ex: "joaosilva"
+const CLOUDINARY_UPLOAD_PRESET = "ml_default"; // Ex: "casamento_videos" (Deve ser UNSIGNED)
 
 export const GiftsPage: React.FC = () => {
   const { gifts, settings, markGiftAsPending, addMessage } = useStore();
@@ -43,11 +46,42 @@ export const GiftsPage: React.FC = () => {
     setTimeout(() => setShowToast(false), 5000);
   };
 
+  const uploadToCloudinary = async (blob: Blob, type: 'audio' | 'video'): Promise<string> => {
+      const formData = new FormData();
+      formData.append('file', blob);
+      formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+      // Opcional: Adicionar tags para organizar no painel
+      formData.append('tags', 'casamento_recados');
+      
+      const resourceType = type === 'video' ? 'video' : 'video'; // Cloudinary trata audio como 'video' as vezes, ou 'auto'
+
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/${resourceType}/upload`,
+        {
+          method: 'POST',
+          body: formData,
+        }
+      );
+
+      if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error?.message || 'Erro no upload para o Cloudinary');
+      }
+
+      const data = await response.json();
+      return data.secure_url;
+  };
+
   const handleSubmit = async () => {
     if (!activeGift) return;
     
     if (!buyerName.trim()) {
         alert("Por favor, digite seu nome para que os noivos saibam quem enviou!");
+        return;
+    }
+
+    if ((mediaBlob && (!CLOUDINARY_CLOUD_NAME || CLOUDINARY_CLOUD_NAME === "YOUR_CLOUD_NAME"))) {
+        alert("Erro de Configuração: O dono do site precisa configurar o Cloudinary no código (Gifts.tsx).");
         return;
     }
 
@@ -59,45 +93,48 @@ export const GiftsPage: React.FC = () => {
 
         // 1. Upload Media if exists
         if (mediaBlob && mediaType) {
-            setUploadProgress('Enviando vídeo/áudio...');
-            const extension = mediaType === 'video' ? 'webm' : 'webm'; // Browser recorder usually outputs webm
-            const fileName = `messages/${Date.now()}_${buyerName.replace(/\s+/g, '_')}.${extension}`;
-            const storageRef = ref(storage, fileName);
             
-            await uploadBytes(storageRef, mediaBlob);
-            downloadUrl = await getDownloadURL(storageRef);
-            console.log("File uploaded:", downloadUrl);
+            if (mediaBlob.size === 0) {
+                 throw new Error("O arquivo de vídeo está vazio (0 bytes). Tente gravar novamente.");
+            }
+
+            setUploadProgress('Enviando para a nuvem...');
+            
+            // Upload to Cloudinary instead of Firebase
+            downloadUrl = await uploadToCloudinary(mediaBlob, mediaType);
+            
+            console.log("File uploaded successfully:", downloadUrl);
         }
 
-        // 2. Save Message with URL
+        // 2. Save Message with URL (URL is now from Cloudinary)
         if (downloadUrl || (mediaPreview && !mediaBlob)) {
-             // Fallback for audio if logic changes, but we prefer Blob
-            addMessage({
+             setUploadProgress('Salvando recado...');
+             addMessage({
                 author: buyerName,
                 type: mediaType || 'audio',
-                content: downloadUrl, // Save the Firebase URL, not Base64
+                content: downloadUrl, 
                 giftId: activeGift.id
             });
         }
 
         // 3. Mark Gift as Pending
+        setUploadProgress('Finalizando...');
         markGiftAsPending(activeGift.id, buyerName);
 
-        setUploadProgress('Concluído!');
         setTimeout(() => {
             setIsSubmitting(false);
             setSelectedGift(null);
             alert("Obrigado! Avisamos os noivos do seu presente. O vídeo foi salvo com sucesso!");
         }, 500);
 
-    } catch (error) {
+    } catch (error: any) {
         console.error("Error submitting gift:", error);
-        alert("Houve um erro ao salvar o vídeo ou o presente. Tente novamente.");
+        alert(`Houve um erro: ${error.message}`);
         setIsSubmitting(false);
+        setUploadProgress('');
     }
   };
 
-  // Helper to get card styles based on status
   const getCardStyle = (status: string) => {
       if (status === 'confirmed') {
           return "border-green-400 bg-green-50 shadow-green-100";
@@ -264,7 +301,7 @@ export const GiftsPage: React.FC = () => {
             <div className="pt-4 border-t border-wedding-200">
                 <button
                     onClick={handleSubmit}
-                    disabled={isSubmitting} // Removida a trava !buyerName daqui para mostrar o alert
+                    disabled={isSubmitting} 
                     className={`w-full py-3 rounded font-serif uppercase tracking-widest text-sm shadow-md transition-all flex items-center justify-center gap-2
                         ${isSubmitting 
                             ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
