@@ -7,6 +7,7 @@ import { GiftsPage } from './pages/Gifts';
 import { TransparencyPage } from './pages/Transparency';
 import { AdminPage } from './pages/Admin';
 import { LoginPage } from './pages/Login';
+import { MessagesPage } from './pages/Messages';
 import { LoadingScreen } from './components/LoadingScreen';
 
 // Wrapper component to access Store Context
@@ -38,6 +39,7 @@ const AppContent: React.FC = () => {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/gifts" element={<GiftsPage />} />
             <Route path="/transparency" element={<TransparencyPage />} />
+            <Route path="/messages" element={<MessagesPage />} />
             
             {/* Protected Admin Route */}
             <Route path="/admin" element={<AdminPage />} />

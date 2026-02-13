@@ -2,24 +2,28 @@ import React, { useState } from 'react';
 import { useStore } from '../store';
 import { Modal } from '../components/Modal';
 import { QRCodeSVG } from 'qrcode.react';
-import { Gift, Heart, Copy, CheckCircle } from 'lucide-react';
+import { Gift as GiftIcon, Heart, Copy, CheckCircle, CreditCard, ExternalLink, Loader2 } from 'lucide-react';
+import { Recorder } from '../components/MediaRecorder';
 
 export const GiftsPage: React.FC = () => {
-  const { gifts, settings, purchaseGift } = useStore();
+  const { gifts, settings, markGiftAsPending, addMessage } = useStore();
   const [selectedGift, setSelectedGift] = useState<string | null>(null);
   
-  // Toast State
+  // States for Purchase Flow
+  const [buyerName, setBuyerName] = useState('');
+  const [mediaBase64, setMediaBase64] = useState<string | null>(null);
+  const [mediaType, setMediaType] = useState<'audio' | 'video' | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showThankYouModal, setShowThankYouModal] = useState(false);
+
+  // Toast
   const [showToast, setShowToast] = useState(false);
 
   const handleOpenGift = (giftId: string) => {
     setSelectedGift(giftId);
-  };
-
-  const handleConfirmPurchase = () => {
-    if (selectedGift) {
-      purchaseGift(selectedGift);
-      // Keep modal open to show QR code, user manually closes it
-    }
+    setBuyerName('');
+    setMediaBase64(null);
+    setMediaType(null);
   };
 
   const activeGift = gifts.find(g => g.id === selectedGift);
@@ -27,14 +31,54 @@ export const GiftsPage: React.FC = () => {
   const handleCopyPix = () => {
     navigator.clipboard.writeText(settings.pixKey);
     setShowToast(true);
-    setTimeout(() => setShowToast(false), 5000); // 5 seconds
+    setTimeout(() => setShowToast(false), 5000);
+  };
+
+  const handleSubmit = async () => {
+    if (!activeGift || !buyerName.trim()) {
+        alert("Por favor, digite seu nome.");
+        return;
+    }
+
+    setIsSubmitting(true);
+    // Simulate network delay
+    setTimeout(() => {
+        // 1. Save Message if exists
+        if (mediaBase64 && mediaType) {
+            addMessage({
+                author: buyerName,
+                type: mediaType,
+                content: mediaBase64,
+                giftId: activeGift.id
+            });
+        }
+
+        // 2. Mark Gift as Pending
+        markGiftAsPending(activeGift.id, buyerName);
+
+        // 3. Close Modal
+        setIsSubmitting(false);
+        setSelectedGift(null);
+        alert("Obrigado! Avisamos os noivos do seu presente. Assim que confirmado, ele aparecerá como comprado no site.");
+    }, 1000);
+  };
+
+  // Helper to get card styles based on status
+  const getCardStyle = (status: string) => {
+      if (status === 'confirmed') {
+          return "border-green-400 bg-green-50 shadow-green-100";
+      }
+      if (status === 'pending') {
+          return "border-yellow-300 bg-yellow-50 shadow-sm";
+      }
+      return "border-wedding-100 bg-white hover:shadow-xl";
   };
 
   return (
     <div className="min-h-screen bg-wedding-50 py-12 animate-fade-in relative">
       
       {/* Toast Notification */}
-      <div className={`fixed top-24 right-4 z-50 max-w-sm w-full bg-white border border-wedding-300 shadow-xl rounded-lg p-4 transform transition-all duration-500 ease-in-out ${showToast ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0 pointer-events-none'}`}>
+      <div className={`fixed top-24 right-4 z-[60] max-w-sm w-full bg-white border border-wedding-300 shadow-xl rounded-lg p-4 transform transition-all duration-500 ease-in-out ${showToast ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0 pointer-events-none'}`}>
         <div className="flex items-start gap-3">
           <div className="flex-shrink-0 text-green-500 mt-0.5">
             <CheckCircle size={20} />
@@ -42,7 +86,7 @@ export const GiftsPage: React.FC = () => {
           <div>
             <p className="text-sm font-medium text-wedding-900 mb-1">Sucesso!</p>
             <p className="text-sm text-wedding-600 leading-relaxed">
-              Chave pix copiada para a área de transferência. Escolha seu banco de preferência e confira se o pix está em nome de <strong>Jéssica Barbosa dos Anjos Del Corso</strong>. Obrigado!
+              Chave pix copiada!
             </p>
           </div>
         </div>
@@ -59,90 +103,149 @@ export const GiftsPage: React.FC = () => {
       {/* Grid */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {gifts.map((gift) => (
-            <div key={gift.id} className="bg-white rounded-sm shadow-md overflow-hidden hover:shadow-xl transition-shadow duration-300 border border-wedding-100 group flex flex-col h-full">
-              <div className="h-64 overflow-hidden relative flex-shrink-0">
-                <img 
-                  src={gift.imageUrl} 
-                  alt={gift.name} 
-                  className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" 
-                />
-                <div className="absolute top-0 right-0 bg-wedding-500 text-white px-3 py-1 m-2 text-sm font-bold shadow-sm">
-                  R$ {gift.price.toFixed(2)}
+          {gifts.map((gift) => {
+            const isConfirmed = gift.status === 'confirmed';
+            
+            return (
+                <div key={gift.id} className={`rounded-sm shadow-md overflow-hidden transition-all duration-300 border group flex flex-col h-full ${getCardStyle(gift.status)}`}>
+                <div className="h-64 overflow-hidden relative flex-shrink-0">
+                    <img 
+                    src={gift.imageUrl} 
+                    alt={gift.name} 
+                    className={`w-full h-full object-cover transition-transform duration-700 ${isConfirmed ? 'grayscale opacity-70' : 'group-hover:scale-110'}`} 
+                    />
+                    <div className={`absolute top-0 right-0 px-3 py-1 m-2 text-sm font-bold shadow-sm ${isConfirmed ? 'bg-green-600 text-white' : 'bg-wedding-500 text-white'}`}>
+                    R$ {gift.price.toFixed(2)}
+                    </div>
                 </div>
-              </div>
-              <div className="p-6 text-center flex flex-col flex-grow">
-                {/* Title Container Fixed Height for Alignment */}
-                <div className="h-14 mb-2 flex items-center justify-center w-full">
-                   <h3 className="font-serif text-xl text-wedding-800 line-clamp-2 leading-tight px-2">{gift.name}</h3>
+                <div className="p-6 text-center flex flex-col flex-grow">
+                    <div className="h-14 mb-2 flex items-center justify-center w-full">
+                        <h3 className="font-serif text-xl text-wedding-800 line-clamp-2 leading-tight px-2">{gift.name}</h3>
+                    </div>
+                    <p className="text-wedding-600 text-sm mb-6 line-clamp-3 px-2">{gift.description}</p>
+                    <div className="mt-auto w-full">
+                        <button
+                        onClick={() => isConfirmed ? setShowThankYouModal(true) : handleOpenGift(gift.id)}
+                        disabled={isConfirmed && false} // Keep clickable for Thank You modal
+                        className={`w-full font-serif py-3 px-6 transition-colors flex items-center justify-center gap-2 uppercase tracking-widest text-xs
+                            ${isConfirmed 
+                                ? 'bg-green-600 text-white cursor-default' 
+                                : 'bg-wedding-800 hover:bg-wedding-600 text-white'
+                            }`}
+                        >
+                        {isConfirmed ? (
+                            <><CheckCircle size={16} /> AGRADECEMOS O PRESENTE! ❤️</>
+                        ) : (
+                            <><GiftIcon size={16} /> Faça os noivos felizes</>
+                        )}
+                        </button>
+                    </div>
                 </div>
-                <p className="text-wedding-600 text-sm mb-6 line-clamp-3 px-2">{gift.description}</p>
-                <div className="mt-auto w-full">
-                    <button
-                    onClick={() => handleOpenGift(gift.id)}
-                    className="w-full bg-wedding-800 hover:bg-wedding-600 text-white font-serif py-3 px-6 transition-colors flex items-center justify-center gap-2 uppercase tracking-widest text-xs"
-                    >
-                    <Gift size={16} />
-                    Faça os noivos felizes
-                    </button>
                 </div>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
-      {/* Modal */}
+      {/* Thank You Modal (Clicked on confirmed gift) */}
+      <Modal
+        isOpen={showThankYouModal}
+        onClose={() => setShowThankYouModal(false)}
+        title="Obrigado!"
+      >
+          <div className="text-center p-6 space-y-4">
+               <Heart size={64} className="text-red-400 mx-auto animate-pulse" fill="#f87171" />
+               <h3 className="font-serif text-2xl text-wedding-800">Obrigado a você que contribuiu com o nosso sonho!</h3>
+               <p className="text-wedding-600">Cada gesto de carinho nos ajuda a construir nossa nova vida. Somos eternamente gratos por ter pessoas tão especiais ao nosso lado.</p>
+          </div>
+      </Modal>
+
+      {/* Purchase Modal */}
       <Modal 
         isOpen={!!selectedGift} 
-        onClose={() => setSelectedGift(null)}
+        onClose={() => !isSubmitting && setSelectedGift(null)}
         title="Presentear os Noivos"
       >
         {activeGift && (
-          <div className="text-center space-y-6">
-            <div className="bg-wedding-50 p-4 rounded-full w-20 h-20 mx-auto flex items-center justify-center text-wedding-500">
-              <Heart size={40} fill="currentColor" />
-            </div>
-            
-            <div>
-              <h4 className="font-serif text-2xl text-wedding-800 mb-2">Muito Obrigado!</h4>
-              <p className="text-wedding-600">
-                Para confirmar o presente <strong>{activeGift.name}</strong>, por favor utilize o QR Code abaixo para realizar o Pix no valor de:
-              </p>
-              <p className="text-3xl font-serif text-wedding-800 mt-4">
+          <div className="space-y-6 max-h-[80vh] overflow-y-auto px-1 custom-scrollbar">
+            <div className="text-center">
+              <div className="bg-wedding-50 p-4 rounded-full w-16 h-16 mx-auto flex items-center justify-center text-wedding-500 mb-4">
+                <Heart size={32} fill="currentColor" />
+              </div>
+              <h4 className="font-serif text-xl text-wedding-800">Você escolheu: {activeGift.name}</h4>
+              <p className="text-3xl font-serif text-wedding-800 mt-2">
                 R$ {activeGift.price.toFixed(2)}
               </p>
             </div>
 
-            <div 
-                className="flex flex-col items-center justify-center p-4 bg-white border border-wedding-200 inline-block mx-auto cursor-pointer hover:bg-wedding-50 transition"
-                onClick={handleCopyPix}
-                title="Clique para copiar a chave Pix"
-            >
-              <QRCodeSVG value={settings.pixKey} size={200} fgColor={settings.primaryColor} />
-              <p className="text-xs text-wedding-400 mt-2 flex items-center gap-1"><Copy size={10} /> Clique no QR Code para copiar</p>
+            {/* Input Nome */}
+            <div>
+                <label className="block text-sm font-bold text-wedding-700 mb-1">Seu Nome *</label>
+                <input 
+                    type="text" 
+                    placeholder="Quem está dando este presente?"
+                    value={buyerName}
+                    onChange={(e) => setBuyerName(e.target.value)}
+                    className="w-full p-2 border border-wedding-300 rounded focus:ring-wedding-500 focus:border-wedding-500"
+                />
             </div>
 
-            <div className="mt-4 p-3 bg-wedding-100 rounded text-center cursor-pointer hover:bg-wedding-200 transition" onClick={handleCopyPix}>
-                <p className="text-xs text-wedding-500 uppercase tracking-wide mb-1">Chave Pix ({settings.pixKeyType})</p>
-                <p className="font-mono text-wedding-900 break-all flex items-center justify-center gap-2">
-                    {settings.pixKey} <Copy size={14} />
+            {/* Payment Options */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* PIX */}
+                <div className="border border-wedding-200 rounded p-4 text-center hover:bg-wedding-50 transition cursor-pointer" onClick={handleCopyPix}>
+                     <p className="text-sm font-bold text-wedding-800 mb-2 flex items-center justify-center gap-2"><Copy size={14}/> Pagar com Pix</p>
+                     <div className="flex justify-center my-2">
+                        <QRCodeSVG value={settings.pixKey} size={100} fgColor={settings.primaryColor} />
+                     </div>
+                     <p className="text-xs text-wedding-400">Clique para copiar</p>
+                </div>
+
+                {/* Card Link */}
+                <div className={`border border-wedding-200 rounded p-4 text-center flex flex-col items-center justify-center ${settings.paymentUrl ? 'hover:bg-wedding-50' : 'opacity-50 bg-gray-50'}`}>
+                    <p className="text-sm font-bold text-wedding-800 mb-2 flex items-center justify-center gap-2"><CreditCard size={14}/> Cartão de Crédito</p>
+                    {settings.paymentUrl ? (
+                         <a 
+                            href={settings.paymentUrl} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="bg-blue-600 text-white text-xs px-3 py-2 rounded flex items-center gap-2 hover:bg-blue-700 transition"
+                         >
+                            Link de Pagamento <ExternalLink size={12} />
+                         </a>
+                    ) : (
+                        <p className="text-xs text-gray-400">Opção indisponível</p>
+                    )}
+                </div>
+            </div>
+
+            {/* Media Recorder */}
+            <Recorder onRecordingComplete={(base64, type) => {
+                setMediaBase64(base64);
+                setMediaType(type);
+            }} />
+
+            {/* Action Buttons */}
+            <div className="pt-4 border-t border-wedding-200">
+                <button
+                    onClick={handleSubmit}
+                    disabled={isSubmitting || !buyerName}
+                    className={`w-full py-3 rounded font-serif uppercase tracking-widest text-sm shadow-md transition-all flex items-center justify-center gap-2
+                        ${isSubmitting || !buyerName 
+                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+                            : 'bg-wedding-800 text-white hover:bg-wedding-700'
+                        }`}
+                >
+                    {isSubmitting ? (
+                        <><Loader2 className="animate-spin" /> Enviando...</>
+                    ) : (
+                        "Já fiz o pagamento"
+                    )}
+                </button>
+                <p className="text-xs text-center text-wedding-400 mt-2">
+                    Ao clicar, você avisa os noivos que realizou o pagamento.
                 </p>
             </div>
-
-            <div className="text-sm text-wedding-500 italic">
-              Após realizar o Pix, o valor será contabilizado em nossa transparência.
-            </div>
-
-            <button
-               onClick={() => {
-                 handleConfirmPurchase();
-                 setSelectedGift(null);
-               }}
-               className="block w-full text-center text-wedding-800 hover:underline mt-4 text-sm"
-            >
-              Já realizei o pagamento, fechar.
-            </button>
           </div>
         )}
       </Modal>

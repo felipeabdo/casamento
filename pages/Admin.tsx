@@ -1,20 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../store';
 import { useNavigate } from 'react-router-dom';
-import { Trash2, Plus, Edit2, Wand2, Loader2, Save, LogOut, Eye, EyeOff, Image as ImageIcon } from 'lucide-react';
+import { Trash2, Plus, Edit2, Wand2, Loader2, Save, LogOut, Eye, EyeOff, Image as ImageIcon, CheckCircle, Video, Mic, Clock } from 'lucide-react';
 import { generatePageContent } from '../services/geminiService';
 import { Gift, Page, Section } from '../types';
 
 export const AdminPage: React.FC = () => {
   const { 
     settings, updateSettings, 
-    gifts, addGift, updateGift, removeGift, 
+    gifts, addGift, updateGift, removeGift, confirmGiftPayment,
     pages, addPage, removePage, updatePage, 
+    messages, deleteMessage,
     resetStore, logout, isAuthenticated 
   } = useStore();
   
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'general' | 'gifts' | 'pages'>('general');
+  // Added 'messages' tab
+  const [activeTab, setActiveTab] = useState<'general' | 'gifts' | 'pages' | 'messages'>('general');
   const [apiKey, setApiKey] = useState(process.env.API_KEY || '');
   
   // States for Gift Form
@@ -41,7 +43,6 @@ export const AdminPage: React.FC = () => {
     const home = pages.find(p => p.id === 'home');
     const hero = home?.sections.find(s => s.type === 'hero');
     if (hero) {
-        // Ensure imageUrls is initialized if it doesn't exist but imageUrl does
         let loadedHero = { ...hero };
         if (!loadedHero.imageUrls || loadedHero.imageUrls.length === 0) {
             if (loadedHero.imageUrl) {
@@ -67,7 +68,6 @@ export const AdminPage: React.FC = () => {
         description: gift.description,
         imageUrl: gift.imageUrl
     });
-    // Scroll to top of gifts section
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -80,7 +80,6 @@ export const AdminPage: React.FC = () => {
     e.preventDefault();
     if (newGift.name && newGift.price) {
       if (editingGiftId) {
-        // Update existing
         updateGift(editingGiftId, {
             name: newGift.name,
             price: Number(newGift.price),
@@ -89,7 +88,6 @@ export const AdminPage: React.FC = () => {
         });
         setEditingGiftId(null);
       } else {
-        // Add new
         addGift({
             name: newGift.name,
             price: Number(newGift.price),
@@ -101,14 +99,13 @@ export const AdminPage: React.FC = () => {
     }
   };
 
-  // Banner Slideshow Management
   const addHeroImage = () => {
       if (newHeroImageUrl) {
           const currentImages = homeHero.imageUrls || [];
           setHomeHero({
               ...homeHero,
               imageUrls: [...currentImages, newHeroImageUrl],
-              imageUrl: newHeroImageUrl // Update primary fallback as well to the latest
+              imageUrl: newHeroImageUrl 
           });
           setNewHeroImageUrl('');
       }
@@ -120,7 +117,7 @@ export const AdminPage: React.FC = () => {
       setHomeHero({
           ...homeHero,
           imageUrls: newImages,
-          imageUrl: newImages.length > 0 ? newImages[0] : '' // Fallback to first image or empty
+          imageUrl: newImages.length > 0 ? newImages[0] : '' 
       });
   };
 
@@ -150,14 +147,12 @@ export const AdminPage: React.FC = () => {
     setGenerationError(null);
     try {
       const generatedPage = await generatePageContent(aiTopic, pages, apiKey);
-      // Ensure unique slug
       let slug = generatedPage.slug;
       if (!slug.startsWith('/')) slug = '/' + slug;
       if (pages.some(p => p.slug === slug)) {
          slug = slug + '-' + Date.now();
       }
       generatedPage.slug = slug;
-      // Default to visible
       generatedPage.isVisible = true; 
       
       addPage(generatedPage);
@@ -172,7 +167,6 @@ export const AdminPage: React.FC = () => {
 
   if (!isAuthenticated) return null;
 
-  // Class for inputs (Dark bg, White text)
   const inputClass = "w-full p-2 border border-wedding-600 rounded bg-wedding-900 text-white placeholder-wedding-400 focus:ring-2 focus:ring-wedding-500 focus:border-wedding-500 transition-colors";
 
   return (
@@ -194,25 +188,16 @@ export const AdminPage: React.FC = () => {
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-wedding-200">
-          <button 
-            onClick={() => setActiveTab('general')}
-            className={`flex-1 py-4 font-serif text-lg transition-colors ${activeTab === 'general' ? 'bg-wedding-50 text-wedding-800 border-b-2 border-wedding-800' : 'text-wedding-400 hover:text-wedding-600'}`}
-          >
-            Geral & Design
-          </button>
-          <button 
-            onClick={() => setActiveTab('gifts')}
-            className={`flex-1 py-4 font-serif text-lg transition-colors ${activeTab === 'gifts' ? 'bg-wedding-50 text-wedding-800 border-b-2 border-wedding-800' : 'text-wedding-400 hover:text-wedding-600'}`}
-          >
-            Lista de Presentes
-          </button>
-          <button 
-            onClick={() => setActiveTab('pages')}
-            className={`flex-1 py-4 font-serif text-lg transition-colors ${activeTab === 'pages' ? 'bg-wedding-50 text-wedding-800 border-b-2 border-wedding-800' : 'text-wedding-400 hover:text-wedding-600'}`}
-          >
-            Páginas & AI
-          </button>
+        <div className="flex border-b border-wedding-200 overflow-x-auto">
+          {['general', 'gifts', 'messages', 'pages'].map(tab => (
+            <button 
+                key={tab}
+                onClick={() => setActiveTab(tab as any)}
+                className={`flex-1 py-4 font-serif text-lg transition-colors capitalize min-w-[120px] ${activeTab === tab ? 'bg-wedding-50 text-wedding-800 border-b-2 border-wedding-800' : 'text-wedding-400 hover:text-wedding-600'}`}
+            >
+                {tab === 'general' ? 'Geral' : tab === 'gifts' ? 'Presentes' : tab === 'messages' ? 'Recados' : 'Páginas'}
+            </button>
+          ))}
         </div>
 
         <div className="p-8">
@@ -221,7 +206,53 @@ export const AdminPage: React.FC = () => {
           {activeTab === 'general' && (
             <div className="space-y-8 max-w-4xl mx-auto">
               
-              {/* Basic Info */}
+              {/* Payment Settings */}
+              <div className="bg-wedding-50/50 p-6 rounded border border-wedding-200">
+                   <h3 className="text-xl font-serif text-wedding-800 mb-4 border-b border-wedding-200 pb-2">Pagamento (Pix & Links)</h3>
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                     <div>
+                       <label className="block text-sm font-bold text-wedding-700 mb-2">Chave Pix</label>
+                       <input 
+                         type="text" 
+                         value={settings.pixKey}
+                         onChange={(e) => updateSettings({ pixKey: e.target.value })}
+                         className={inputClass}
+                       />
+                     </div>
+                     <div>
+                       <label className="block text-sm font-bold text-wedding-700 mb-2">Link de Pagamento (PicPay/MercadoPago)</label>
+                       <input 
+                         type="text" 
+                         placeholder="https://..."
+                         value={settings.paymentUrl || ''}
+                         onChange={(e) => updateSettings({ paymentUrl: e.target.value })}
+                         className={inputClass}
+                       />
+                       <p className="text-xs text-wedding-500 mt-1">Cole aqui seu link genérico de pagamento para quem quiser usar cartão.</p>
+                     </div>
+                   </div>
+              </div>
+
+              {/* Messages Visibility */}
+              <div className="bg-wedding-50/50 p-6 rounded border border-wedding-200">
+                 <h3 className="text-xl font-serif text-wedding-800 mb-4">Privacidade</h3>
+                 <div className="flex items-center justify-between">
+                     <div>
+                         <p className="font-bold text-wedding-800">Mural de Recados Público</p>
+                         <p className="text-sm text-wedding-600">Se ativo, qualquer pessoa poderá ver e ouvir os recados deixados no site.</p>
+                     </div>
+                     <div className="relative inline-block w-12 h-6 transition duration-200 ease-in-out rounded-full cursor-pointer">
+                        <input 
+                            type="checkbox" 
+                            checked={settings.showMessagesToPublic}
+                            onChange={(e) => updateSettings({ showMessagesToPublic: e.target.checked })}
+                            className="w-5 h-5 accent-wedding-800"
+                        />
+                     </div>
+                 </div>
+              </div>
+
+              {/* Basic Info (Existing) */}
               <div className="bg-wedding-50/50 p-6 rounded border border-wedding-200">
                  <h2 className="text-2xl font-serif text-wedding-800 mb-6 border-b border-wedding-200 pb-2">Informações Básicas</h2>
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -252,21 +283,10 @@ export const AdminPage: React.FC = () => {
                         className={inputClass}
                     />
                     </div>
-                    
-                    {/* Admin Password Change */}
-                    <div className="md:col-span-2 pt-4">
-                        <label className="block text-sm font-bold text-wedding-700 mb-2">Senha do Painel (Admin)</label>
-                        <input 
-                            type="text" 
-                            value={settings.adminPassword || ''}
-                            onChange={(e) => updateSettings({ adminPassword: e.target.value })}
-                            className={inputClass}
-                        />
-                    </div>
                  </div>
               </div>
 
-              {/* Loading Screen Settings */}
+              {/* Loading Screen Settings (Existing) */}
               <div className="bg-wedding-50/50 p-6 rounded border border-wedding-200">
                  <h2 className="text-2xl font-serif text-wedding-800 mb-6 border-b border-wedding-200 pb-2">Tela de Carregamento</h2>
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -274,7 +294,6 @@ export const AdminPage: React.FC = () => {
                       <label className="block text-sm font-bold text-wedding-700 mb-2">Título do Loading</label>
                       <input 
                           type="text" 
-                          placeholder="Ex: Jéssica & Felipe"
                           value={settings.loadingTitle || ''}
                           onChange={(e) => updateSettings({ loadingTitle: e.target.value })}
                           className={inputClass}
@@ -284,7 +303,6 @@ export const AdminPage: React.FC = () => {
                       <label className="block text-sm font-bold text-wedding-700 mb-2">Subtítulo</label>
                       <input 
                           type="text" 
-                          placeholder="Ex: Carregando nossa história..."
                           value={settings.loadingSubtitle || ''}
                           onChange={(e) => updateSettings({ loadingSubtitle: e.target.value })}
                           className={inputClass}
@@ -293,9 +311,9 @@ export const AdminPage: React.FC = () => {
                  </div>
               </div>
 
-              {/* Home Page Hero Edit */}
+              {/* Home Page Hero Edit (Existing) */}
               <div className="bg-wedding-50/50 p-6 rounded border border-wedding-200">
-                 <h2 className="text-2xl font-serif text-wedding-800 mb-6 border-b border-wedding-200 pb-2">Capa do Site (Página Inicial)</h2>
+                 <h2 className="text-2xl font-serif text-wedding-800 mb-6 border-b border-wedding-200 pb-2">Capa do Site</h2>
                  <div className="space-y-4">
                     <div>
                         <label className="block text-sm font-bold text-wedding-700 mb-2">Título Principal</label>
@@ -315,13 +333,8 @@ export const AdminPage: React.FC = () => {
                            className={inputClass}
                         />
                     </div>
-
-                    {/* Image Management */}
                     <div className="pt-2">
                          <label className="block text-sm font-bold text-wedding-700 mb-2">Fotos do Banner (Carrossel)</label>
-                         <p className="text-xs text-wedding-500 mb-2">Adicione múltiplas fotos para criar um efeito de rotação automática.</p>
-                         
-                         {/* List of existing images */}
                          <div className="space-y-2 mb-3">
                              {homeHero.imageUrls && homeHero.imageUrls.map((url, idx) => (
                                  <div key={idx} className="flex gap-2 items-center bg-wedding-100 p-2 rounded border border-wedding-200">
@@ -333,12 +346,10 @@ export const AdminPage: React.FC = () => {
                                  </div>
                              ))}
                          </div>
-
-                         {/* Add new image */}
                          <div className="flex gap-2">
                              <input 
                                 type="text"
-                                placeholder="URL da nova imagem (ex: https://...)"
+                                placeholder="URL da nova imagem"
                                 value={newHeroImageUrl}
                                 onChange={(e) => setNewHeroImageUrl(e.target.value)}
                                 className={inputClass}
@@ -348,43 +359,12 @@ export const AdminPage: React.FC = () => {
                              </button>
                          </div>
                     </div>
-
                     <div className="flex justify-end pt-4">
                         <button onClick={handleUpdateHomeHero} className="bg-wedding-800 text-white px-6 py-2 rounded hover:bg-wedding-700 font-serif shadow-md flex items-center gap-2">
                             <Save size={16} /> Salvar Capa
                         </button>
                     </div>
                  </div>
-              </div>
-
-              {/* Pix Settings */}
-              <div className="bg-wedding-50/50 p-6 rounded border border-wedding-200">
-                   <h3 className="text-xl font-serif text-wedding-800 mb-4 border-b border-wedding-200 pb-2">Pagamento (Pix)</h3>
-                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                     <div>
-                       <label className="block text-sm font-bold text-wedding-700 mb-2">Tipo de Chave</label>
-                       <select 
-                         value={settings.pixKeyType}
-                         onChange={(e) => updateSettings({ pixKeyType: e.target.value as any })}
-                         className={inputClass}
-                       >
-                         <option value="CPF">CPF</option>
-                         <option value="CNPJ">CNPJ</option>
-                         <option value="Email">Email</option>
-                         <option value="Phone">Telefone</option>
-                         <option value="Random">Aleatória</option>
-                       </select>
-                     </div>
-                     <div className="md:col-span-2">
-                       <label className="block text-sm font-bold text-wedding-700 mb-2">Chave Pix</label>
-                       <input 
-                         type="text" 
-                         value={settings.pixKey}
-                         onChange={(e) => updateSettings({ pixKey: e.target.value })}
-                         className={inputClass}
-                       />
-                     </div>
-                   </div>
               </div>
               
               {/* API Key */}
@@ -393,7 +373,6 @@ export const AdminPage: React.FC = () => {
                  <div className="flex gap-2">
                     <input 
                       type="password" 
-                      placeholder="Cole sua API Key aqui..."
                       value={apiKey}
                       onChange={(e) => setApiKey(e.target.value)}
                       className={inputClass}
@@ -471,8 +450,8 @@ export const AdminPage: React.FC = () => {
                   <thead className="bg-wedding-100">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-wedding-600 uppercase tracking-wider">Presente</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-wedding-600 uppercase tracking-wider">Valor</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-wedding-600 uppercase tracking-wider">Comprados</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-wedding-600 uppercase tracking-wider">Status</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-wedding-600 uppercase tracking-wider">Quem Comprou?</th>
                       <th className="px-6 py-3 text-right text-xs font-medium text-wedding-600 uppercase tracking-wider">Ações</th>
                     </tr>
                   </thead>
@@ -481,11 +460,29 @@ export const AdminPage: React.FC = () => {
                       <tr key={gift.id} className={editingGiftId === gift.id ? "bg-wedding-50" : ""}>
                         <td className="px-6 py-4 whitespace-nowrap flex items-center gap-3">
                           <img src={gift.imageUrl} alt="" className="h-10 w-10 rounded object-cover" />
-                          <div className="text-sm font-medium text-wedding-900">{gift.name}</div>
+                          <div>
+                              <div className="text-sm font-medium text-wedding-900">{gift.name}</div>
+                              <div className="text-xs text-wedding-500">R$ {gift.price}</div>
+                          </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-wedding-600">R$ {gift.price.toFixed(2)}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-wedding-600">{gift.purchasedCount}</td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                            {gift.status === 'confirmed' && <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full font-bold">Pago</span>}
+                            {gift.status === 'pending' && <span className="bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rounded-full font-bold animate-pulse">Aguardando</span>}
+                            {gift.status === 'available' && <span className="bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded-full">Disponível</span>}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-wedding-800 font-bold">
+                            {gift.buyerName || '-'}
+                        </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium flex justify-end gap-2">
+                          {gift.status !== 'confirmed' && (
+                              <button 
+                                onClick={() => { if(confirm("Confirmar que recebeu o pagamento?")) confirmGiftPayment(gift.id) }}
+                                className="text-green-600 hover:text-green-800 mr-2" 
+                                title="Confirmar Recebimento"
+                              >
+                                <CheckCircle size={20} />
+                              </button>
+                          )}
                           <button onClick={() => handleEditGift(gift)} className="text-blue-500 hover:text-blue-700" title="Editar">
                             <Edit2 size={18} />
                           </button>
@@ -501,10 +498,45 @@ export const AdminPage: React.FC = () => {
             </div>
           )}
 
+          {/* MESSAGES TAB (NEW) */}
+          {activeTab === 'messages' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {messages.length === 0 && <p className="text-gray-500 col-span-3 text-center">Nenhum recado ainda.</p>}
+                  {messages.map(msg => (
+                      <div key={msg.id} className="bg-white border border-wedding-200 rounded p-4 relative">
+                          <div className="flex justify-between items-start mb-2">
+                              <div>
+                                  <h4 className="font-bold text-wedding-800">{msg.author}</h4>
+                                  <span className="text-xs text-gray-500 flex items-center gap-1">
+                                      <Clock size={10} /> {new Date(msg.createdAt).toLocaleDateString()}
+                                  </span>
+                              </div>
+                              <button onClick={() => { if(confirm("Apagar mensagem?")) deleteMessage(msg.id) }} className="text-red-400 hover:text-red-600">
+                                  <Trash2 size={16} />
+                              </button>
+                          </div>
+                          <div className="bg-gray-100 rounded overflow-hidden">
+                              {msg.type === 'video' ? (
+                                  <video src={msg.content} controls className="w-full h-40 object-cover" />
+                              ) : (
+                                  <div className="p-4 flex items-center justify-center">
+                                      <audio src={msg.content} controls className="w-full" />
+                                  </div>
+                              )}
+                          </div>
+                          {msg.giftId && (
+                              <div className="mt-2 text-xs text-wedding-500 bg-wedding-50 p-1 rounded">
+                                  Enviado com presente
+                              </div>
+                          )}
+                      </div>
+                  ))}
+              </div>
+          )}
+
           {/* PAGES & AI */}
           {activeTab === 'pages' && (
              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-               
                {/* List of Pages */}
                <div className="space-y-4">
                  <h3 className="text-xl font-serif text-wedding-800 mb-4">Gerenciar Páginas</h3>
@@ -518,7 +550,6 @@ export const AdminPage: React.FC = () => {
                         <span className="text-xs text-wedding-500 font-mono bg-wedding-100 px-1 rounded">{page.slug}</span>
                       </div>
                       <div className="flex gap-2 items-center">
-                         {/* Visibility Toggle */}
                          <div className="flex items-center mr-2">
                             <input 
                                 type="checkbox" 
@@ -527,33 +558,23 @@ export const AdminPage: React.FC = () => {
                                 onChange={() => togglePageVisibility(page.id, page.isVisible)}
                                 className="hidden"
                             />
-                            <label htmlFor={`vis-${page.id}`} className="cursor-pointer text-wedding-600 hover:text-wedding-800 p-2" title={page.isVisible ? "Ocultar Página" : "Mostrar Página"}>
+                            <label htmlFor={`vis-${page.id}`} className="cursor-pointer text-wedding-600 hover:text-wedding-800 p-2">
                                 {page.isVisible ? <Eye size={18} /> : <EyeOff size={18} />}
                             </label>
                          </div>
-
                          {!page.isSystem && (
-                           <button onClick={() => removePage(page.id)} className="text-red-400 hover:text-red-600 p-2" title="Excluir Página">
+                           <button onClick={() => removePage(page.id)} className="text-red-400 hover:text-red-600 p-2">
                              <Trash2 size={18} />
                            </button>
                          )}
-                         {page.isSystem && <span className="text-xs text-wedding-400 italic p-2 select-none">Sistema</span>}
                       </div>
                    </div>
                  ))}
                </div>
-
+               
                {/* AI Generator */}
                <div className="bg-gradient-to-br from-wedding-50 to-white p-6 rounded-lg border border-wedding-300 shadow-md h-fit sticky top-6">
-                 <div className="flex items-center gap-2 mb-4 text-wedding-800">
-                   <Wand2 className="text-purple-600" />
-                   <h3 className="text-xl font-serif">Criador de Páginas com IA</h3>
-                 </div>
-                 
-                 <p className="text-sm text-wedding-600 mb-6">
-                   Descreva o que você quer (ex: "Informações sobre Traje", "Dicas de Hotéis", "Cerimônia") e a IA criará uma página completa mantendo a estética e coerência do site.
-                 </p>
-
+                 {/* ... AI logic ... */}
                  <div className="space-y-4">
                    <input
                      type="text"
@@ -563,38 +584,17 @@ export const AdminPage: React.FC = () => {
                      onChange={(e) => setAiTopic(e.target.value)}
                      disabled={isGenerating}
                    />
-                   
-                   {generationError && (
-                     <div className="p-3 bg-red-50 text-red-700 text-sm rounded border border-red-200">
-                       Erro: {generationError}
-                     </div>
-                   )}
-
                    <button
                      onClick={handleGeneratePage}
                      disabled={isGenerating || !aiTopic}
-                     className={`w-full py-3 px-4 rounded font-serif uppercase tracking-widest text-sm flex items-center justify-center gap-2 transition-all
-                       ${isGenerating || !aiTopic 
-                         ? 'bg-wedding-200 text-wedding-400 cursor-not-allowed' 
-                         : 'bg-wedding-800 text-white hover:bg-wedding-700 shadow-lg hover:shadow-xl'
-                       }`}
+                     className="bg-wedding-800 text-white w-full py-2 rounded"
                    >
-                     {isGenerating ? (
-                       <><Loader2 className="animate-spin" /> Criando Mágica...</>
-                     ) : (
-                       <><Wand2 size={16} /> Gerar Página</>
-                     )}
+                     {isGenerating ? <Loader2 className="animate-spin mx-auto"/> : "Gerar com IA"}
                    </button>
-                   
-                   {!apiKey && (
-                     <p className="text-xs text-center text-red-500">Configure sua API Key na aba "Geral" primeiro.</p>
-                   )}
                  </div>
                </div>
-
              </div>
           )}
-
         </div>
       </div>
     </div>

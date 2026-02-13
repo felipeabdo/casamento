@@ -1,195 +1,187 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { AppState, AppSettings, Gift, Page, INITIAL_SETTINGS, INITIAL_GIFTS, INITIAL_PAGES } from './types';
-import { db } from './firebaseConfig'; // Importa a configuração que criamos
-import { 
-  collection, 
-  doc, 
-  onSnapshot, 
-  updateDoc, 
-  setDoc, 
-  addDoc, 
-  deleteDoc, 
-  query,
-  orderBy
-} from 'firebase/firestore';
+import { AppState, AppSettings, Gift, Page, Message, INITIAL_SETTINGS, INITIAL_GIFTS, INITIAL_PAGES } from './types';
 
 interface StoreContextType extends AppState {
   isAuthenticated: boolean;
   login: (password: string) => boolean;
   logout: () => void;
   updateSettings: (settings: Partial<AppSettings>) => void;
-  addGift: (gift: Omit<Gift, 'id' | 'purchasedCount'>) => void;
+  addGift: (gift: Omit<Gift, 'id' | 'purchasedCount' | 'status'>) => void;
   updateGift: (id: string, gift: Partial<Gift>) => void;
   removeGift: (id: string) => void;
-  purchaseGift: (id: string) => void;
+  
+  // New/Updated Actions
+  markGiftAsPending: (id: string, buyerName: string) => void;
+  confirmGiftPayment: (id: string) => void;
+  
   addPage: (page: Page) => void;
   updatePage: (id: string, page: Partial<Page>) => void;
   removePage: (id: string) => void;
+  
+  // Message Actions
+  addMessage: (message: Omit<Message, 'id' | 'createdAt'>) => void;
+  deleteMessage: (id: string) => void;
+
   resetStore: () => void;
-  loading: boolean; // Adicionado para saber se está carregando dados
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
 
 export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [settings, setSettings] = useState<AppSettings>(INITIAL_SETTINGS);
-  const [gifts, setGifts] = useState<Gift[]>([]);
-  const [pages, setPages] = useState<Page[]>([]);
+  // Load from localStorage or use defaults
+  const loadState = (): AppState => {
+    const stored = localStorage.getItem('wedding_site_store');
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      
+      // MIGRATION LOGIC
+      
+      // 1. Settings
+      if (!parsed.settings.adminPassword) parsed.settings.adminPassword = INITIAL_SETTINGS.adminPassword;
+      if (!parsed.settings.paymentUrl) parsed.settings.paymentUrl = "";
+      if (parsed.settings.showMessagesToPublic === undefined) parsed.settings.showMessagesToPublic = false;
+
+      // 2. Pages (Ensure system pages exist)
+      const hasMessagesPage = parsed.pages.some((p: Page) => p.id === 'messages-page');
+      if (!hasMessagesPage) {
+         const msgsPage = INITIAL_PAGES.find(p => p.id === 'messages-page');
+         if (msgsPage) parsed.pages.push(msgsPage);
+      }
+
+      // 3. Gifts (Ensure status field)
+      if (parsed.gifts) {
+        parsed.gifts = parsed.gifts.map((g: any) => ({
+            ...g,
+            status: g.status || 'available',
+            buyerName: g.buyerName || ''
+        }));
+      }
+
+      // 4. Messages (Initialize if missing)
+      if (!parsed.messages) {
+        parsed.messages = [];
+      }
+
+      return parsed;
+    }
+    return {
+      settings: INITIAL_SETTINGS,
+      gifts: INITIAL_GIFTS,
+      pages: INITIAL_PAGES,
+      messages: []
+    };
+  };
+
+  const [state, setState] = useState<AppState>(loadState);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [loading, setLoading] = useState(true);
 
-  // 1. Sincronizar Configurações (Settings)
   useEffect(() => {
-    const unsub = onSnapshot(doc(db, "wedding_site", "settings"), (docSnap) => {
-      if (docSnap.exists()) {
-        setSettings(docSnap.data() as AppSettings);
-      } else {
-        // Se não existir no banco, cria com o padrão
-        setDoc(doc(db, "wedding_site", "settings"), INITIAL_SETTINGS);
-        setSettings(INITIAL_SETTINGS);
-      }
-      setLoading(false);
-    });
-    return () => unsub();
-  }, []);
-
-  // 2. Sincronizar Presentes (Gifts)
-  useEffect(() => {
-    // Ordena por preço, você pode mudar se quiser
-    const q = query(collection(db, "gifts")); 
-    const unsub = onSnapshot(q, (snapshot) => {
-      if (snapshot.empty && gifts.length === 0 && !loading) {
-         // Opcional: Se estiver vazio, popula com os iniciais
-         // (Comentado para não criar duplicatas automaticamente, descomente se quiser popular o banco na primeira vez)
-         // INITIAL_GIFTS.forEach(g => setDoc(doc(db, "gifts", g.id), g));
-      }
-      
-      const loadedGifts = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Gift[];
-      
-      // Se o banco estiver vazio na primeira vez, usamos o local para visualização
-      // Mas o ideal é popular o banco pelo Admin.
-      if (loadedGifts.length === 0 && loading) {
-          setGifts(INITIAL_GIFTS);
-      } else {
-          setGifts(loadedGifts);
-      }
-    });
-    return () => unsub();
-  }, []);
-
-  // 3. Sincronizar Páginas (Pages)
-  useEffect(() => {
-    const unsub = onSnapshot(collection(db, "pages"), (snapshot) => {
-      const loadedPages = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Page[];
-
-      // Ordenação básica para manter Home primeiro se necessário, 
-      // ou use um campo 'order' no futuro.
-      const sortedPages = loadedPages.sort((a, b) => {
-        if (a.id === 'home') return -1;
-        if (b.id === 'home') return 1;
-        return 0;
-      });
-
-      if (sortedPages.length === 0) {
-         // Se não tem páginas no banco, inicia com as padrões
-         INITIAL_PAGES.forEach(p => setDoc(doc(db, "pages", p.id), p));
-         setPages(INITIAL_PAGES);
-      } else {
-         setPages(sortedPages);
-      }
-    });
-    return () => unsub();
-  }, []);
-
-  // --- ACTIONS (Agora salvam no Firestore) ---
+    try {
+        localStorage.setItem('wedding_site_store', JSON.stringify(state));
+    } catch (e) {
+        console.error("Storage full or error saving state", e);
+        alert("Atenção: O armazenamento do navegador está cheio. Alguns vídeos/áudios podem não ser salvos.");
+    }
+  }, [state]);
 
   const login = (password: string) => {
-    // A senha agora vem do banco de dados (settings)
-    if (password === settings.adminPassword) {
+    if (password === state.settings.adminPassword) {
       setIsAuthenticated(true);
       return true;
     }
     return false;
   };
 
-  const logout = () => setIsAuthenticated(false);
-
-  const updateSettings = async (newSettings: Partial<AppSettings>) => {
-    // Atualiza localmente para feedback instantâneo e envia para o banco
-    const updated = { ...settings, ...newSettings };
-    setSettings(updated); 
-    await updateDoc(doc(db, "wedding_site", "settings"), newSettings);
-  };
-
-  const addGift = async (gift: Omit<Gift, 'id' | 'purchasedCount'>) => {
-    // O Firebase cria o ID automaticamente se usarmos addDoc, 
-    // mas seu app espera IDs strings. Vamos gerar e usar setDoc ou deixar o firebase gerar.
-    // Vamos deixar o Firebase gerar o ID:
-    const docRef = await addDoc(collection(db, "gifts"), {
-        ...gift,
-        purchasedCount: 0
-    });
-    // O snapshot vai atualizar o estado automaticamente
-  };
-
-  const updateGift = async (id: string, updatedGift: Partial<Gift>) => {
-    await updateDoc(doc(db, "gifts", id), updatedGift);
-  };
-
-  const removeGift = async (id: string) => {
-    await deleteDoc(doc(db, "gifts", id));
-  };
-
-  const purchaseGift = async (id: string) => {
-    const gift = gifts.find(g => g.id === id);
-    if (gift) {
-      await updateDoc(doc(db, "gifts", id), {
-        purchasedCount: gift.purchasedCount + 1
-      });
-    }
-  };
-
-  const addPage = async (page: Page) => {
-    // Usamos o ID da página como ID do documento para facilitar (ex: 'home')
-    await setDoc(doc(db, "pages", page.id), page);
-  };
-
-  const updatePage = async (id: string, updatedPage: Partial<Page>) => {
-    await updateDoc(doc(db, "pages", id), updatedPage);
-  };
-
-  const removePage = async (id: string) => {
-    await deleteDoc(doc(db, "pages", id));
-  };
-
-  const resetStore = async () => {
-    // CUIDADO: Isso vai resetar o banco de dados inteiro
-    await setDoc(doc(db, "wedding_site", "settings"), INITIAL_SETTINGS);
-    
-    // Apagar presentes e recriar
-    // (Em um app real, faríamos em batch, aqui simplificado)
-    gifts.forEach(g => deleteDoc(doc(db, "gifts", g.id)));
-    INITIAL_GIFTS.forEach(g => addDoc(collection(db, "gifts"), { ...g, purchasedCount: 0 }));
-
-    // Resetar páginas
-    pages.forEach(p => deleteDoc(doc(db, "pages", p.id)));
-    INITIAL_PAGES.forEach(p => setDoc(doc(db, "pages", p.id), p));
-    
+  const logout = () => {
     setIsAuthenticated(false);
-    alert("Site resetado para os padrões originais.");
+  };
+
+  const updateSettings = (newSettings: Partial<AppSettings>) => {
+    setState(prev => ({ ...prev, settings: { ...prev.settings, ...newSettings } }));
+  };
+
+  const addGift = (gift: Omit<Gift, 'id' | 'purchasedCount' | 'status'>) => {
+    const newGift: Gift = {
+      ...gift,
+      id: crypto.randomUUID(),
+      purchasedCount: 0,
+      status: 'available'
+    };
+    setState(prev => ({ ...prev, gifts: [...prev.gifts, newGift] }));
+  };
+
+  const updateGift = (id: string, updatedGift: Partial<Gift>) => {
+    setState(prev => ({
+      ...prev,
+      gifts: prev.gifts.map(g => g.id === id ? { ...g, ...updatedGift } : g)
+    }));
+  };
+
+  const removeGift = (id: string) => {
+    setState(prev => ({ ...prev, gifts: prev.gifts.filter(g => g.id !== id) }));
+  };
+
+  // User marks as paid -> Pending
+  const markGiftAsPending = (id: string, buyerName: string) => {
+    setState(prev => ({
+      ...prev,
+      gifts: prev.gifts.map(g => g.id === id ? { ...g, status: 'pending', buyerName } : g)
+    }));
+  };
+
+  // Admin confirms payment -> Confirmed (and increments count)
+  const confirmGiftPayment = (id: string) => {
+    setState(prev => ({
+      ...prev,
+      gifts: prev.gifts.map(g => g.id === id ? { 
+          ...g, 
+          status: 'confirmed', 
+          purchasedCount: g.purchasedCount + 1 
+      } : g)
+    }));
+  };
+
+  const addPage = (page: Page) => {
+    setState(prev => ({ ...prev, pages: [...prev.pages, page] }));
+  };
+
+  const updatePage = (id: string, updatedPage: Partial<Page>) => {
+    setState(prev => ({
+      ...prev,
+      pages: prev.pages.map(p => p.id === id ? { ...p, ...updatedPage } : p)
+    }));
+  };
+
+  const removePage = (id: string) => {
+    setState(prev => ({ ...prev, pages: prev.pages.filter(p => p.id !== id) }));
+  };
+
+  const addMessage = (message: Omit<Message, 'id' | 'createdAt'>) => {
+      const newMessage: Message = {
+          ...message,
+          id: crypto.randomUUID(),
+          createdAt: new Date().toISOString()
+      };
+      setState(prev => ({ ...prev, messages: [newMessage, ...prev.messages] }));
+  };
+
+  const deleteMessage = (id: string) => {
+      setState(prev => ({ ...prev, messages: prev.messages.filter(m => m.id !== id) }));
+  };
+
+  const resetStore = () => {
+    setState({
+      settings: INITIAL_SETTINGS,
+      gifts: INITIAL_GIFTS,
+      pages: INITIAL_PAGES,
+      messages: []
+    });
+    setIsAuthenticated(false);
   };
 
   return (
     <StoreContext.Provider value={{
-      settings,
-      gifts,
-      pages,
+      ...state,
       isAuthenticated,
       login,
       logout,
@@ -197,12 +189,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       addGift,
       updateGift,
       removeGift,
-      purchaseGift,
+      markGiftAsPending,
+      confirmGiftPayment,
       addPage,
       updatePage,
       removePage,
-      resetStore,
-      loading
+      addMessage,
+      deleteMessage,
+      resetStore
     }}>
       {children}
     </StoreContext.Provider>

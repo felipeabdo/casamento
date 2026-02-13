@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useStore } from '../store';
-import { Menu, X, Gift, Heart, Info, Settings } from 'lucide-react';
+import { Menu, X, Gift, Heart, Info, Settings, MessageCircle } from 'lucide-react';
 
 interface LayoutProps {
   children: React.ReactNode;
 }
 
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
-  const { settings, pages } = useStore();
+  const { settings, pages, isAuthenticated } = useStore();
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -16,14 +16,19 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const getIcon = (slug: string) => {
       if (slug === '/gifts') return <Gift size={16} />;
       if (slug === '/transparency') return <Info size={16} />;
+      if (slug === '/messages') return <MessageCircle size={16} />;
       return <Heart size={16} />;
   };
 
-  // We filter out 'home' from nav links because it's usually the logo link, 
-  // but if you want it in the menu, remove the filter. 
-  // We strictly respect `isVisible` property now.
   const navLinks = pages
     .filter(p => p.isVisible && p.slug !== '/') // Filter invisible pages and Home (logo handles home)
+    .filter(p => {
+        // Special rule for Messages page: Only show if public OR logged in
+        if (p.slug === '/messages') {
+            return settings.showMessagesToPublic || isAuthenticated;
+        }
+        return true;
+    })
     .map(p => ({
         name: p.title,
         path: p.slug,
