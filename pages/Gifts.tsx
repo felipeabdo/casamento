@@ -6,9 +6,12 @@ import { Gift as GiftIcon, Heart, Copy, CheckCircle, CreditCard, ExternalLink, L
 import { Recorder } from '../components/MediaRecorder';
 
 // --- CONFIGURAÇÃO DO CLOUDINARY ---
-// VERIFIQUE SE O PRESET NO PAINEL DO CLOUDINARY ESTÁ COMO "UNSIGNED" (NÃO ASSINADO)
+// PASSO IMPORTANTE:
+// 1. Vá em Settings > Upload > Upload presets no Cloudinary.
+// 2. Crie um novo preset chamado "casamento_upload".
+// 3. Mude o "Signing Mode" para "UNSIGNED" (Isso é obrigatório).
 const CLOUDINARY_CLOUD_NAME = "Ydzbjlkypw"; 
-const CLOUDINARY_UPLOAD_PRESET = "ml_default"; // Se criar um novo preset unsigned, atualize este nome aqui!
+const CLOUDINARY_UPLOAD_PRESET = "casamento_upload"; 
 
 export const GiftsPage: React.FC = () => {
   const { gifts, settings, markGiftAsPending, addMessage } = useStore();
@@ -52,7 +55,7 @@ export const GiftsPage: React.FC = () => {
       formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
       formData.append('tags', 'casamento_recados');
       
-      // 'auto' é mais seguro, pois o Cloudinary detecta o tipo correto (video ou audio) pelo arquivo
+      // 'auto' permite que o Cloudinary decida se é video ou audio automaticamente
       const resourceType = 'auto'; 
 
       const response = await fetch(
@@ -65,10 +68,16 @@ export const GiftsPage: React.FC = () => {
 
       if (!response.ok) {
           const errorData = await response.json();
-          // Tratamento específico para o erro comum de configuração
+          console.error("Cloudinary Error Details:", errorData);
+
           if (errorData.error?.message === "Unknown API key") {
-              throw new Error("Erro de Configuração: O Preset do Cloudinary parece estar como 'Signed'. Mude para 'Unsigned' no painel do Cloudinary.");
+              throw new Error(`Erro de Permissão: O preset '${CLOUDINARY_UPLOAD_PRESET}' no Cloudinary provavelmente está como 'Signed'. Mude para 'Unsigned' no painel.`);
           }
+          
+          if (errorData.error?.message?.includes("Upload preset must be specified")) {
+             throw new Error(`Erro de Configuração: O preset '${CLOUDINARY_UPLOAD_PRESET}' não foi encontrado na sua conta Cloudinary.`);
+          }
+
           throw new Error(errorData.error?.message || 'Erro no upload para o Cloudinary');
       }
 
@@ -81,12 +90,6 @@ export const GiftsPage: React.FC = () => {
     
     if (!buyerName.trim()) {
         alert("Por favor, digite seu nome para que os noivos saibam quem enviou!");
-        return;
-    }
-
-    // Validação básica se o usuário esqueceu de configurar
-    if ((CLOUDINARY_CLOUD_NAME as string) === "YOUR_CLOUD_NAME") {
-        alert("Erro: Configure o CLOUDINARY_CLOUD_NAME no arquivo Gifts.tsx");
         return;
     }
 
@@ -103,7 +106,7 @@ export const GiftsPage: React.FC = () => {
                  throw new Error("O arquivo de vídeo está vazio (0 bytes). Tente gravar novamente.");
             }
 
-            setUploadProgress('Enviando para a nuvem...');
+            setUploadProgress('Enviando vídeo...');
             
             // Upload to Cloudinary
             downloadUrl = await uploadToCloudinary(mediaBlob, mediaType);
