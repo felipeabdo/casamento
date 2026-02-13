@@ -7,7 +7,7 @@ import { GiftsPage } from './pages/Gifts';
 import { TransparencyPage } from './pages/Transparency';
 import { AdminPage } from './pages/Admin';
 import { LoginPage } from './pages/Login';
-import { MessagesPage } from './pages/Messages';
+import { MessagesPage } from './pages/Messages'; // Importing Messages Page
 import { LoadingScreen } from './components/LoadingScreen';
 
 // Wrapper component to access Store Context
