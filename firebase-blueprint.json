@@ -1,0 +1,101 @@
+{
+  "entities": {
+    "AppSettings": {
+      "title": "AppSettings",
+      "description": "Global application settings",
+      "type": "object",
+      "properties": {
+        "coupleName": { "type": "string" },
+        "weddingDate": { "type": "string" },
+        "weddingLocation": { "type": "string" },
+        "pixKey": { "type": "string" },
+        "pixKeyType": { "type": "string" },
+        "primaryColor": { "type": "string" },
+        "adminPassword": { "type": "string" },
+        "guestPassword": { "type": "string" },
+        "requireGuestLogin": { "type": "boolean" },
+        "loadingTitle": { "type": "string" },
+        "loadingSubtitle": { "type": "string" },
+        "paymentUrl": { "type": "string" },
+        "showMessagesToPublic": { "type": "boolean" }
+      }
+    },
+    "Gift": {
+      "title": "Gift",
+      "description": "A gift in the registry",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "price": { "type": "number" },
+        "imageUrl": { "type": "string" },
+        "purchasedCount": { "type": "number" },
+        "status": { "type": "string", "enum": ["available", "pending", "confirmed"] },
+        "buyerName": { "type": "string" }
+      }
+    },
+    "Message": {
+      "title": "Message",
+      "description": "A message from a guest",
+      "type": "object",
+      "properties": {
+        "author": { "type": "string" },
+        "type": { "type": "string" },
+        "content": { "type": "string" },
+        "fallbackContent": { "type": "string" },
+        "cloudinaryPublicId": { "type": "string" },
+        "firebasePath": { "type": "string" },
+        "textContent": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "giftId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved"] }
+      }
+    },
+    "Page": {
+      "title": "Page",
+      "description": "A dynamic page in the site",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "slug": { "type": "string" },
+        "isSystem": { "type": "boolean" },
+        "isVisible": { "type": "boolean" },
+        "sections": { "type": "array" }
+      }
+    },
+    "Guest": {
+      "title": "Guest",
+      "description": "A registered guest",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "username": { "type": "string" },
+        "password": { "type": "string" }
+      }
+    },
+    "Photo": {
+      "title": "Photo",
+      "description": "A photo uploaded to the gallery",
+      "type": "object",
+      "properties": {
+        "url": { "type": "string" },
+        "fallbackUrl": { "type": "string" },
+        "publicId": { "type": "string" },
+        "cloudinaryPublicId": { "type": "string" },
+        "uploaderName": { "type": "string" },
+        "uploaderId": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved"] },
+        "deletionRequest": { "type": "object" }
+      }
+    }
+  },
+  "firestore": {
+    "/app/settings": { "schema": "AppSettings", "description": "Global settings" },
+    "/gifts/{giftId}": { "schema": "Gift", "description": "Gift items" },
+    "/messages/{messageId}": { "schema": "Message", "description": "Guest messages" },
+    "/pages/{pageId}": { "schema": "Page", "description": "Site pages" },
+    "/guests/{guestId}": { "schema": "Guest", "description": "Guest list" },
+    "/photos/{photoId}": { "schema": "Photo", "description": "Gallery photos" }
+  }
+}

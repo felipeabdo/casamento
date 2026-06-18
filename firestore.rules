@@ -1,0 +1,59 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/guests/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "felipe.abdo.ti@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isDocOwner(data) {
+      return isAuthenticated() && request.auth.uid == data.uploaderId;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /app/settings {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /gifts/{giftId} {
+      allow read: if true;
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'buyerName']));
+    }
+
+    match /messages/{messageId} {
+      allow read: if true;
+      allow create: if true; // Allow anyone to leave a message
+      allow update, delete: if isAdmin();
+    }
+
+    match /pages/{pageId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /guests/{guestId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /photos/{photoId} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update: if isAdmin() || (isAuthenticated() && (isDocOwner(resource.data) || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deletionRequest'])));
+      allow delete: if isAdmin() || (isAuthenticated() && isDocOwner(resource.data));
+    }
+  }
+}
