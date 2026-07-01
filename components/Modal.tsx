@@ -6,9 +6,10 @@ interface ModalProps {
   onClose: () => void;
   title?: string;
   children: React.ReactNode;
+  maxWidth?: string;
 }
 
-export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
+export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, maxWidth }) => {
   const modalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -42,11 +43,11 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }
     >
       <div 
         ref={modalRef}
-        className="bg-wedding-50 w-full max-w-lg rounded-sm shadow-2xl border border-wedding-200 transform transition-all animate-fade-in-up"
+        className={`bg-wedding-50 w-full ${maxWidth || 'max-w-lg'} rounded-sm shadow-2xl border border-wedding-200 transform transition-all animate-fade-in-up max-h-[90vh] flex flex-col`}
         role="dialog"
         aria-modal="true"
       >
-        <div className="flex items-center justify-between p-4 border-b border-wedding-200">
+        <div className="flex items-center justify-between p-4 border-b border-wedding-200 shrink-0">
           <h3 className="text-xl font-serif text-wedding-800">{title}</h3>
           <button 
             onClick={onClose}
@@ -55,7 +56,7 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }
             <X size={24} />
           </button>
         </div>
-        <div className="p-6">
+        <div className="p-6 overflow-y-auto flex-1">
           {children}
         </div>
       </div>

@@ -34,6 +34,7 @@ interface StoreContextType extends AppState {
   addContribution: (giftId: string, contribution: Omit<Contribution, 'id' | 'createdAt'> & {isExternal?: boolean}) => void;
   confirmContribution: (giftId: string, contributionId: string) => void;
   removeContribution: (giftId: string, contributionId: string) => void;
+  updateContribution: (giftId: string, contributionId: string, contribution: Partial<Contribution>) => void;
   
   addPage: (page: Page) => void;
   updatePage: (id: string, page: Partial<Page>) => void;
@@ -69,7 +70,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       photos: [],
       guests: []
   });
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return localStorage.getItem('isAdminAuthenticated') === 'true';
+  });
   const [currentGuest, setCurrentGuest] = useState<Guest | null>(null);
   const [loading, setLoading] = useState(true);
   const isSigningIn = React.useRef(false);
@@ -278,6 +281,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const login = (password: string) => {
     if (password === state.settings.adminPassword) {
       setIsAuthenticated(true);
+      localStorage.setItem('isAdminAuthenticated', 'true');
       return true;
     }
     return false;
@@ -285,6 +289,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   const logout = () => {
     setIsAuthenticated(false);
+    localStorage.removeItem('isAdminAuthenticated');
   };
 
   const guestLogin = (username: string, password?: string) => {
@@ -383,13 +388,30 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       };
       const updatedContributions = [...(gift.contributions || []), newContribution];
       
-      const totalArrecadado = updatedContributions.reduce((sum, c) => sum + c.amount, 0);
-      const isFullyFunded = totalArrecadado >= gift.price;
+      const totalConfirmed = updatedContributions
+        .filter(c => c.status === 'confirmed')
+        .reduce((sum, c) => sum + c.amount, 0);
+      const totalAll = updatedContributions.reduce((sum, c) => sum + c.amount, 0);
 
-      // If it's an external purchase, we can immediately seal the gift as confirmed
+      let newStatus: 'available' | 'pending' | 'confirmed' = 'available';
+      if (totalConfirmed >= gift.price) {
+        newStatus = 'confirmed';
+      } else if (totalAll >= gift.price) {
+        newStatus = 'pending';
+      } else {
+        newStatus = 'available';
+      }
+
+      const confirmedBuyers = updatedContributions
+        .filter(c => c.status === 'confirmed')
+        .map(c => c.buyerName);
+      const buyerName = confirmedBuyers.join(', ') || '';
+
       await updateDoc(doc(db, "gifts", giftId), {
         contributions: updatedContributions,
-        status: (isFullyFunded && contribution.isExternal) ? 'confirmed' : (isFullyFunded && gift.status === 'available' ? 'pending' : gift.status)
+        status: newStatus,
+        buyerName: buyerName,
+        purchasedCount: newStatus === 'confirmed' ? Math.max(gift.purchasedCount, 1) : gift.purchasedCount
       });
     }
   };
@@ -404,13 +426,27 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       const totalConfirmed = updatedContributions
         .filter(c => c.status === 'confirmed')
         .reduce((sum, c) => sum + c.amount, 0);
+      const totalAll = updatedContributions.reduce((sum, c) => sum + c.amount, 0);
         
-      const isFullyFunded = totalConfirmed >= gift.price;
+      let newStatus: 'available' | 'pending' | 'confirmed' = 'available';
+      if (totalConfirmed >= gift.price) {
+        newStatus = 'confirmed';
+      } else if (totalAll >= gift.price) {
+        newStatus = 'pending';
+      } else {
+        newStatus = 'available';
+      }
+
+      const confirmedBuyers = updatedContributions
+        .filter(c => c.status === 'confirmed')
+        .map(c => c.buyerName);
+      const buyerName = confirmedBuyers.join(', ') || '';
       
       await updateDoc(doc(db, "gifts", giftId), {
         contributions: updatedContributions,
-        status: isFullyFunded ? 'confirmed' : gift.status,
-        purchasedCount: isFullyFunded ? gift.purchasedCount + 1 : gift.purchasedCount
+        status: newStatus,
+        buyerName: buyerName,
+        purchasedCount: newStatus === 'confirmed' ? Math.max(gift.purchasedCount, 1) : gift.purchasedCount
       });
     }
   };
@@ -420,17 +456,65 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     if (gift && gift.contributions) {
       const updatedContributions = gift.contributions.filter(c => c.id !== contributionId);
       
-      const totalArrecadado = updatedContributions.reduce((sum, c) => sum + c.amount, 0);
-      const isFullyFunded = totalArrecadado >= gift.price;
-      
-      let newStatus = gift.status;
-      if (!isFullyFunded && gift.status === 'pending') {
-          newStatus = 'available';
+      const totalConfirmed = updatedContributions
+        .filter(c => c.status === 'confirmed')
+        .reduce((sum, c) => sum + c.amount, 0);
+      const totalAll = updatedContributions.reduce((sum, c) => sum + c.amount, 0);
+        
+      let newStatus: 'available' | 'pending' | 'confirmed' = 'available';
+      if (totalConfirmed >= gift.price) {
+        newStatus = 'confirmed';
+      } else if (totalAll >= gift.price) {
+        newStatus = 'pending';
+      } else {
+        newStatus = 'available';
       }
+
+      const confirmedBuyers = updatedContributions
+        .filter(c => c.status === 'confirmed')
+        .map(c => c.buyerName);
+      const buyerName = confirmedBuyers.join(', ') || '';
 
       await updateDoc(doc(db, "gifts", giftId), {
         contributions: updatedContributions,
-        status: newStatus
+        status: newStatus,
+        buyerName: buyerName,
+        purchasedCount: newStatus === 'confirmed' ? Math.max(gift.purchasedCount, 1) : gift.purchasedCount
+      });
+    }
+  };
+
+  const updateContribution = async (giftId: string, contributionId: string, updatedFields: Partial<Contribution>) => {
+    const gift = state.gifts.find(g => g.id === giftId);
+    if (gift && gift.contributions) {
+      const updatedContributions = gift.contributions.map(c => 
+        c.id === contributionId ? { ...c, ...updatedFields } : c
+      );
+      
+      const totalConfirmed = updatedContributions
+        .filter(c => c.status === 'confirmed')
+        .reduce((sum, c) => sum + c.amount, 0);
+      const totalAll = updatedContributions.reduce((sum, c) => sum + c.amount, 0);
+        
+      let newStatus: 'available' | 'pending' | 'confirmed' = 'available';
+      if (totalConfirmed >= gift.price) {
+        newStatus = 'confirmed';
+      } else if (totalAll >= gift.price) {
+        newStatus = 'pending';
+      } else {
+        newStatus = 'available';
+      }
+
+      const confirmedBuyers = updatedContributions
+        .filter(c => c.status === 'confirmed')
+        .map(c => c.buyerName);
+      const buyerName = confirmedBuyers.join(', ') || '';
+
+      await updateDoc(doc(db, "gifts", giftId), {
+        contributions: updatedContributions,
+        status: newStatus,
+        buyerName: buyerName,
+        purchasedCount: newStatus === 'confirmed' ? Math.max(gift.purchasedCount, 1) : gift.purchasedCount
       });
     }
   };
@@ -708,6 +792,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     await batch.commit();
     setIsAuthenticated(false);
+    localStorage.removeItem('isAdminAuthenticated');
   };
 
   return (
@@ -728,6 +813,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       addContribution,
       confirmContribution,
       removeContribution,
+      updateContribution,
       addPage,
       updatePage,
       removePage,

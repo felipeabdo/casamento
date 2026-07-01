@@ -3,7 +3,7 @@ import { useStore } from '../store';
 import { useNavigate } from 'react-router-dom';
 import { Trash2, Plus, Edit2, Wand2, Loader2, Save, LogOut, Eye, EyeOff, Image as ImageIcon, CheckCircle, Video, Mic, Clock, X } from 'lucide-react';
 import { generatePageContent } from '../services/geminiService';
-import { Gift, Page, Section } from '../types';
+import { Gift, Page, Section, Contribution } from '../types';
 import { Modal } from '../components/Modal';
 import { Country, State, City } from 'country-state-city';
 import { AsYouType, getCountryCallingCode } from 'libphonenumber-js';
@@ -11,7 +11,7 @@ import { AsYouType, getCountryCallingCode } from 'libphonenumber-js';
 export const AdminPage: React.FC = () => {
   const { 
     settings, updateSettings, 
-    gifts, addGift, updateGift, removeGift, confirmGiftPayment, confirmContribution, removeContribution,
+    gifts, addGift, updateGift, removeGift, confirmGiftPayment, confirmContribution, removeContribution, addContribution, updateContribution,
     pages, addPage, removePage, updatePage, 
     messages, deleteMessage, updateMessageStatus,
     photos, deletePhoto, updatePhotoStatus, rejectPhotoDeletion,
@@ -25,7 +25,19 @@ export const AdminPage: React.FC = () => {
   
   // States for Gift Form
   const [editingGiftId, setEditingGiftId] = useState<string | null>(null);
-  const [newGift, setNewGift] = useState<Partial<Gift>>({ name: '', price: 0, description: '', imageUrl: 'https://picsum.photos/400/300' });
+  const [newGift, setNewGift] = useState<Partial<Gift>>({ name: '', price: 0, description: '', imageUrl: 'https://picsum.photos/400/300', status: 'available', buyerName: '' });
+  const [selectedGuestIdForGiftForm, setSelectedGuestIdForGiftForm] = useState<string>('');
+
+  // Contribution state variables
+  const [expandedGiftId, setExpandedGiftId] = useState<string | null>(null);
+  const [selectedGuestIdForGift, setSelectedGuestIdForGift] = useState<string>('');
+  const [customContributorName, setCustomContributorName] = useState<string>('');
+  const [newContributionAmount, setNewContributionAmount] = useState<number>(0);
+  const [newContributionStatus, setNewContributionStatus] = useState<'pending' | 'confirmed'>('pending');
+  const [editingContributionId, setEditingContributionId] = useState<string | null>(null);
+  const [editContribName, setEditContribName] = useState<string>('');
+  const [editContribAmount, setEditContribAmount] = useState<number>(0);
+  const [editContribStatus, setEditContribStatus] = useState<'pending' | 'confirmed'>('pending');
 
   // States for Guest Form
   const [editingGuestId, setEditingGuestId] = useState<string | null>(null);
@@ -134,14 +146,26 @@ export const AdminPage: React.FC = () => {
         price: gift.price,
         description: gift.description,
         imageUrl: gift.imageUrl,
-        externalLink: gift.externalLink
+        externalLink: gift.externalLink,
+        status: gift.status || 'available',
+        buyerName: gift.buyerName || ''
     });
+    // Set matching guest ID if exists
+    const matchingGuest = guests.find(g => g.name === gift.buyerName);
+    if (matchingGuest) {
+      setSelectedGuestIdForGiftForm(matchingGuest.id);
+    } else if (gift.buyerName) {
+      setSelectedGuestIdForGiftForm('custom');
+    } else {
+      setSelectedGuestIdForGiftForm('');
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const cancelEditGift = () => {
     setEditingGiftId(null);
-    setNewGift({ name: '', price: 0, description: '', imageUrl: 'https://picsum.photos/400/300', externalLink: '' });
+    setNewGift({ name: '', price: 0, description: '', imageUrl: 'https://picsum.photos/400/300', externalLink: '', status: 'available', buyerName: '' });
+    setSelectedGuestIdForGiftForm('');
   };
 
   const handleGiftSubmit = (e: React.FormEvent) => {
@@ -153,7 +177,9 @@ export const AdminPage: React.FC = () => {
             price: Number(newGift.price),
             description: newGift.description || '',
             imageUrl: newGift.imageUrl || 'https://picsum.photos/400/300',
-            externalLink: newGift.externalLink || ''
+            externalLink: newGift.externalLink || '',
+            status: newGift.status || 'available',
+            buyerName: newGift.buyerName || ''
         });
         setEditingGiftId(null);
       } else {
@@ -162,11 +188,177 @@ export const AdminPage: React.FC = () => {
             price: Number(newGift.price),
             description: newGift.description || '',
             imageUrl: newGift.imageUrl || 'https://picsum.photos/400/300',
-            externalLink: newGift.externalLink || ''
-        });
+            externalLink: newGift.externalLink || '',
+            status: 'available',
+            buyerName: ''
+        } as any);
       }
-      setNewGift({ name: '', price: 0, description: '', imageUrl: 'https://picsum.photos/400/300', externalLink: '' });
+      setNewGift({ name: '', price: 0, description: '', imageUrl: 'https://picsum.photos/400/300', externalLink: '', status: 'available', buyerName: '' });
+      setSelectedGuestIdForGiftForm('');
     }
+  };
+
+  const handleAddManualContribution = async (gift: Gift) => {
+    let contributorName = customContributorName.trim();
+    if (selectedGuestIdForGift && selectedGuestIdForGift !== 'custom') {
+      const guestObj = guests.find(g => g.id === selectedGuestIdForGift);
+      if (guestObj) {
+        contributorName = guestObj.name;
+      }
+    }
+    
+    if (!contributorName) {
+      alert("Por favor, selecione um convidado ou digite o nome.");
+      return;
+    }
+    
+    if (!newContributionAmount || newContributionAmount <= 0) {
+      alert("Por favor, digite um valor maior que zero.");
+      return;
+    }
+
+    const currentConfirmed = gift.contributions
+      ?.filter(contrib => contrib.status === 'confirmed')
+      .reduce((sum, contrib) => sum + contrib.amount, 0) || 0;
+
+    if (newContributionStatus === 'confirmed') {
+      const newConfirmedTotal = currentConfirmed + newContributionAmount;
+      const isFullyFunded = newConfirmedTotal >= gift.price;
+
+      if (isFullyFunded) {
+        setConfirmModal({
+          isOpen: true,
+          message: `Esta nova contribuição de R$ ${newContributionAmount.toFixed(2)} feita por ${contributorName} completará o valor total do presente "${gift.name}" (R$ ${gift.price.toFixed(2)}). Deseja confirmar o recebimento e marcar o presente como TOTALMENTE COMPRADO?`,
+          onConfirm: async () => {
+            await addContribution(gift.id, {
+              buyerName: contributorName,
+              amount: newContributionAmount,
+              status: 'confirmed'
+            });
+            setSelectedGuestIdForGift('');
+            setCustomContributorName('');
+            setNewContributionAmount(0);
+            setNewContributionStatus('pending');
+          }
+        });
+        return;
+      } else {
+        setConfirmModal({
+          isOpen: true,
+          message: `Confirmar recebimento desta contribuição parcial de R$ ${newContributionAmount.toFixed(2)} feita por ${contributorName}? O presente "${gift.name}" continuará DISPONÍVEL para outras contribuições pois o valor total (R$ ${gift.price.toFixed(2)}) ainda não foi atingido.`,
+          onConfirm: async () => {
+            await addContribution(gift.id, {
+              buyerName: contributorName,
+              amount: newContributionAmount,
+              status: 'confirmed'
+            });
+            setSelectedGuestIdForGift('');
+            setCustomContributorName('');
+            setNewContributionAmount(0);
+            setNewContributionStatus('pending');
+          }
+        });
+        return;
+      }
+    }
+
+    // Pending contribution addition
+    await addContribution(gift.id, {
+      buyerName: contributorName,
+      amount: newContributionAmount,
+      status: 'pending'
+    });
+    
+    setSelectedGuestIdForGift('');
+    setCustomContributorName('');
+    setNewContributionAmount(0);
+    setNewContributionStatus('pending');
+  };
+
+  const handleConfirmContributionClick = (gift: Gift, c: Contribution) => {
+    const currentConfirmed = gift.contributions
+      ?.filter(contrib => contrib.id !== c.id && contrib.status === 'confirmed')
+      .reduce((sum, contrib) => sum + contrib.amount, 0) || 0;
+    const newConfirmedTotal = currentConfirmed + c.amount;
+    const isFullyFunded = newConfirmedTotal >= gift.price;
+
+    if (isFullyFunded) {
+      setConfirmModal({
+        isOpen: true,
+        message: `Esta contribuição de R$ ${c.amount.toFixed(2)} feita por ${c.buyerName} completará o valor total de R$ ${gift.price.toFixed(2)} do presente "${gift.name}". Confirmar recebimento total e marcar o presente como TOTALMENTE COMPRADO?`,
+        onConfirm: () => confirmContribution(gift.id, c.id)
+      });
+    } else {
+      setConfirmModal({
+        isOpen: true,
+        message: `Confirmar recebimento desta contribuição parcial de R$ ${c.amount.toFixed(2)} feita por ${c.buyerName}? O presente "${gift.name}" continuará DISPONÍVEL para outras contribuições pois o valor total de R$ ${gift.price.toFixed(2)} ainda não foi atingido.`,
+        onConfirm: () => confirmContribution(gift.id, c.id)
+      });
+    }
+  };
+
+  const handleSaveContributionEdit = async (gift: Gift, c: Contribution) => {
+    if (!editContribName.trim()) {
+      alert("O nome do comprador não pode ser vazio.");
+      return;
+    }
+    if (editContribAmount <= 0) {
+      alert("O valor deve ser maior que zero.");
+      return;
+    }
+
+    const currentConfirmed = gift.contributions
+      ?.filter(contrib => contrib.id !== c.id && contrib.status === 'confirmed')
+      .reduce((sum, contrib) => sum + contrib.amount, 0) || 0;
+
+    if (editContribStatus === 'confirmed') {
+      const newConfirmedTotal = currentConfirmed + editContribAmount;
+      const isFullyFunded = newConfirmedTotal >= gift.price;
+
+      if (isFullyFunded) {
+        setConfirmModal({
+          isOpen: true,
+          message: `Esta alteração para R$ ${editContribAmount.toFixed(2)} (Confirmado) de ${editContribName} completará o valor total do presente "${gift.name}" (R$ ${gift.price.toFixed(2)}). Confirmar alteração e marcar o presente como TOTALMENTE COMPRADO?`,
+          onConfirm: async () => {
+            await updateContribution(gift.id, c.id, {
+              buyerName: editContribName.trim(),
+              amount: editContribAmount,
+              status: 'confirmed'
+            });
+            setEditingContributionId(null);
+          }
+        });
+        return;
+      } else {
+        setConfirmModal({
+          isOpen: true,
+          message: `Confirmar alteração da contribuição de ${editContribName} para R$ ${editContribAmount.toFixed(2)} (Confirmado)? O presente "${gift.name}" continuará DISPONÍVEL para outras contribuições pois o valor total de R$ ${gift.price.toFixed(2)} ainda não foi atingido.`,
+          onConfirm: async () => {
+            await updateContribution(gift.id, c.id, {
+              buyerName: editContribName.trim(),
+              amount: editContribAmount,
+              status: 'confirmed'
+            });
+            setEditingContributionId(null);
+          }
+        });
+        return;
+      }
+    }
+
+    // Save as pending
+    setConfirmModal({
+      isOpen: true,
+      message: `Confirmar alteração da contribuição de ${editContribName} como PENDENTE?`,
+      onConfirm: async () => {
+        await updateContribution(gift.id, c.id, {
+          buyerName: editContribName.trim(),
+          amount: editContribAmount,
+          status: 'pending'
+        });
+        setEditingContributionId(null);
+      }
+    });
   };
 
   const countries = useMemo(() => Country.getAllCountries(), []);
@@ -425,6 +617,7 @@ export const AdminPage: React.FC = () => {
   if (!isAuthenticated) return null;
 
   const inputClass = "w-full p-2 border border-wedding-300 rounded bg-white text-wedding-900 placeholder-wedding-300 focus:ring-2 focus:ring-wedding-500 focus:border-wedding-500 transition-colors";
+  const selectClass = "w-full p-2 pr-10 border border-wedding-300 rounded bg-white text-wedding-900 placeholder-wedding-300 focus:ring-2 focus:ring-wedding-500 focus:border-wedding-500 transition-colors cursor-pointer appearance-none bg-[url(\"data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20fill='none'%20viewBox='0%200%2024%2024'%20stroke='%234a3728'%20stroke-width='2'%3E%3Cpath%20stroke-linecap='round'%20stroke-linejoin='round'%20d='M19%209l-7%207-7-7'/%3E%3C/svg%3E\")] bg-[position:right_0.75rem_center] bg-[size:1.25em_1.25em] bg-no-repeat";
 
   return (
     <div className="min-h-screen bg-wedding-50 py-12 px-4 animate-fade-in">
@@ -803,7 +996,7 @@ export const AdminPage: React.FC = () => {
                     <select
                       value={newGuest.category || 'Comum'}
                       onChange={e => setNewGuest({...newGuest, category: e.target.value as any})}
-                      className={inputClass}
+                      className={selectClass}
                     >
                       <option value="Comum">Comum</option>
                       <option value="Padrinho">Padrinho</option>
@@ -826,7 +1019,7 @@ export const AdminPage: React.FC = () => {
                     <select
                       value={newGuest.gender || 'M'}
                       onChange={e => setNewGuest({...newGuest, gender: e.target.value as any})}
-                      className={inputClass}
+                      className={selectClass}
                     >
                       <option value="M">Masculino</option>
                       <option value="F">Feminino</option>
@@ -838,7 +1031,7 @@ export const AdminPage: React.FC = () => {
                     <select
                       value={newGuest.countryCode || 'BR'}
                       onChange={handleCountryChange}
-                      className={inputClass}
+                      className={selectClass}
                     >
                       <option value="">Selecione o País</option>
                       {countries.map(c => (
@@ -851,7 +1044,7 @@ export const AdminPage: React.FC = () => {
                     <select
                       value={newGuest.stateCode || ''}
                       onChange={handleStateChange}
-                      className={inputClass}
+                      className={selectClass}
                       disabled={!newGuest.countryCode || states.length === 0}
                     >
                       <option value="">Selecione o Estado</option>
@@ -1035,6 +1228,15 @@ export const AdminPage: React.FC = () => {
                       placeholder="https://..."
                     />
                   </div>
+                  <div className="md:col-span-4">
+                     <label className="block text-xs font-bold text-wedding-600 uppercase mb-1">Descrição</label>
+                     <input 
+                      type="text"
+                      value={newGift.description}
+                      onChange={e => setNewGift({...newGift, description: e.target.value})}
+                      className={inputClass}
+                    />
+                  </div>
                   <div className="flex gap-2 md:col-span-4">
                      <button type="submit" className="bg-wedding-800 text-white p-2 rounded hover:bg-wedding-700 font-serif h-[42px] flex-1">
                         {editingGiftId ? 'Atualizar' : 'Adicionar'}
@@ -1045,15 +1247,56 @@ export const AdminPage: React.FC = () => {
                          </button>
                      )}
                   </div>
-                  <div className="md:col-span-4">
-                     <label className="block text-xs font-bold text-wedding-600 uppercase mb-1">Descrição</label>
-                     <input 
-                      type="text"
-                      value={newGift.description}
-                      onChange={e => setNewGift({...newGift, description: e.target.value})}
-                      className={inputClass}
-                    />
-                  </div>
+                  {editingGiftId && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:col-span-4 mt-2">
+                      <div>
+                        <label className="block text-xs font-bold text-wedding-600 uppercase mb-1">Status do Presente</label>
+                        <select
+                          value={newGift.status || 'available'}
+                          onChange={e => setNewGift({...newGift, status: e.target.value as any})}
+                          className={selectClass}
+                        >
+                          <option value="available">Disponível</option>
+                          <option value="pending">Aguardando Pagamento / Pendente</option>
+                          <option value="confirmed">Pago / Confirmado</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-wedding-600 uppercase mb-1">Comprador Geral (Nome)</label>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          <select
+                            value={selectedGuestIdForGiftForm}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setSelectedGuestIdForGiftForm(val);
+                              if (val === '') {
+                                setNewGift({...newGift, buyerName: ''});
+                              } else if (val !== 'custom') {
+                                const g = guests.find(guest => guest.id === val);
+                                setNewGift({...newGift, buyerName: g ? g.name : ''});
+                              }
+                            }}
+                            className={selectClass}
+                          >
+                            <option value="">Selecione um convidado...</option>
+                            {guests.map(g => (
+                              <option key={g.id} value={g.id}>{g.name} ({g.category || 'Comum'})</option>
+                            ))}
+                            <option value="custom">Outro (Digitar Nome...)</option>
+                          </select>
+                          {(selectedGuestIdForGiftForm === 'custom' || !selectedGuestIdForGiftForm) && (
+                            <input 
+                              type="text"
+                              value={newGift.buyerName || ''}
+                              onChange={e => setNewGift({...newGift, buyerName: e.target.value})}
+                              className={inputClass}
+                              placeholder="Nome do comprador geral..."
+                            />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </form>
               </div>
 
@@ -1084,19 +1327,25 @@ export const AdminPage: React.FC = () => {
                               {gift.status === 'pending' && <span className="bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rounded-full font-bold animate-pulse">Aguardando</span>}
                               {gift.status === 'available' && <span className="bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded-full">Disponível</span>}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-wedding-800 font-bold">
-                              {gift.buyerName || '-'}
+                          <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-wedding-800 font-bold">{gift.buyerName || '-'}</div>
+                              <button 
+                                onClick={() => {
+                                  setExpandedGiftId(gift.id);
+                                  // Pre-populate default remaining amount for convenience
+                                  const totalArrecadado = gift.contributions?.reduce((sum, c) => sum + c.amount, 0) || 0;
+                                  const remaining = Math.max(0, gift.price - totalArrecadado);
+                                  setNewContributionAmount(remaining > 0 ? remaining : gift.price);
+                                  setSelectedGuestIdForGift('');
+                                  setCustomContributorName('');
+                                  setNewContributionStatus('pending');
+                                }}
+                                className="text-xs text-wedding-700 hover:text-wedding-950 underline font-medium mt-1 flex items-center gap-1 cursor-pointer"
+                              >
+                                Gerenciar Contribuições ({gift.contributions?.length || 0})
+                              </button>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium flex justify-end gap-2">
-                            {gift.status === 'pending' && (
-                                <button 
-                                  onClick={() => setConfirmModal({ isOpen: true, message: 'Confirmar que recebeu o pagamento total?', onConfirm: () => confirmGiftPayment(gift.id) })}
-                                  className="text-green-600 hover:text-green-800 mr-2" 
-                                  title="Confirmar Recebimento Total"
-                                >
-                                  <CheckCircle size={20} />
-                                </button>
-                            )}
                             <button onClick={() => handleEditGift(gift)} className="text-blue-500 hover:text-blue-700" title="Editar">
                               <Edit2 size={18} />
                             </button>
@@ -1105,46 +1354,6 @@ export const AdminPage: React.FC = () => {
                             </button>
                           </td>
                         </tr>
-                        {gift.contributions && gift.contributions.length > 0 && (
-                          <tr>
-                            <td colSpan={4} className="px-6 py-2 bg-gray-50">
-                              <div className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wider">Contribuições</div>
-                              <div className="space-y-2">
-                                {gift.contributions.map(c => (
-                                  <div key={c.id} className="flex justify-between items-center bg-white p-2 border rounded shadow-sm">
-                                    <div>
-                                      <span className="font-bold text-wedding-800">{c.buyerName}</span>
-                                      <span className="text-gray-500 ml-2">R$ {c.amount.toFixed(2)}</span>
-                                      <span className="text-xs text-wedding-400 ml-2">({gift.name})</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                      {c.status === 'confirmed' ? (
-                                        <span className="text-green-600 text-xs font-bold"><CheckCircle size={14} className="inline mr-1"/>Confirmado</span>
-                                      ) : (
-                                        <>
-                                          <span className="text-yellow-600 text-xs font-bold animate-pulse">Pendente</span>
-                                          <button 
-                                            onClick={() => setConfirmModal({ isOpen: true, message: `Confirmar contribuição de R$ ${c.amount.toFixed(2)} de ${c.buyerName} para o presente "${gift.name}"?`, onConfirm: () => confirmContribution(gift.id, c.id) })}
-                                            className="bg-green-500 text-white px-2 py-1 rounded text-xs hover:bg-green-600"
-                                          >
-                                            Confirmar
-                                          </button>
-                                        </>
-                                      )}
-                                      <button 
-                                        onClick={() => setConfirmModal({ isOpen: true, message: `Excluir contribuição de R$ ${c.amount.toFixed(2)} de ${c.buyerName} para o presente "${gift.name}"?`, onConfirm: () => removeContribution(gift.id, c.id) })}
-                                        className="text-red-500 hover:text-red-700 ml-2"
-                                        title="Excluir Contribuição"
-                                      >
-                                        <Trash2 size={16} />
-                                      </button>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </td>
-                          </tr>
-                        )}
                       </React.Fragment>
                     ))}
                   </tbody>
@@ -1372,6 +1581,224 @@ export const AdminPage: React.FC = () => {
            )}
         </div>
       </div>
+
+      {/* Contributions Modal */}
+      {(() => {
+        const activeGiftForModal = expandedGiftId ? gifts.find(g => g.id === expandedGiftId) : null;
+        if (!activeGiftForModal) return null;
+
+        return (
+          <Modal
+            isOpen={!!expandedGiftId}
+            onClose={() => setExpandedGiftId(null)}
+            title={`Gerenciar Contribuições: ${activeGiftForModal.name}`}
+            maxWidth="max-w-4xl"
+          >
+            <div className="space-y-6 text-wedding-900">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-wedding-200 pb-2 gap-2">
+                <span className="text-sm text-wedding-700">
+                  Valor Total do Presente: <strong className="text-wedding-900 font-serif text-base">R$ {activeGiftForModal.price.toFixed(2)}</strong>
+                </span>
+                <span className="text-sm text-wedding-700">
+                  Status: <strong className={`capitalize ${activeGiftForModal.status === 'confirmed' ? 'text-green-600' : activeGiftForModal.status === 'pending' ? 'text-yellow-600' : 'text-gray-600'}`}>{activeGiftForModal.status === 'confirmed' ? 'Pago' : activeGiftForModal.status === 'pending' ? 'Aguardando' : 'Disponível'}</strong>
+                </span>
+              </div>
+
+              {/* Form to Add Contribution */}
+              <div className="bg-white p-5 rounded border border-wedding-200 shadow-sm">
+                <h4 className="text-xs font-bold text-wedding-700 mb-3 uppercase tracking-wider">Adicionar Nova Contribuição</h4>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                  <div>
+                    <label className="block text-xs font-bold text-wedding-600 mb-1">Selecionar Convidado</label>
+                    <select
+                      value={selectedGuestIdForGift}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setSelectedGuestIdForGift(val);
+                        if (val !== 'custom') {
+                          const g = guests.find(guest => guest.id === val);
+                          setCustomContributorName(g ? g.name : '');
+                        } else {
+                          setCustomContributorName('');
+                        }
+                      }}
+                      className={selectClass}
+                    >
+                      <option value="">Selecione um convidado...</option>
+                      {guests.map(g => (
+                        <option key={g.id} value={g.id}>{g.name} ({g.category || 'Comum'})</option>
+                      ))}
+                      <option value="custom">Outro (Digitar Nome...)</option>
+                    </select>
+                  </div>
+                  
+                  {selectedGuestIdForGift === 'custom' && (
+                    <div>
+                      <label className="block text-xs font-bold text-wedding-600 mb-1">Nome do Comprador</label>
+                      <input
+                        type="text"
+                        placeholder="Digite o nome..."
+                        value={customContributorName}
+                        onChange={(e) => setCustomContributorName(e.target.value)}
+                        className={inputClass}
+                      />
+                    </div>
+                  )}
+                  
+                  <div>
+                    <label className="block text-xs font-bold text-wedding-600 mb-1">Valor (R$)</label>
+                    <input
+                      type="number"
+                      placeholder="Ex: 150"
+                      value={newContributionAmount || ''}
+                      onChange={(e) => setNewContributionAmount(Number(e.target.value))}
+                      className={inputClass}
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-xs font-bold text-wedding-600 mb-1">Status</label>
+                    <select
+                      value={newContributionStatus}
+                      onChange={(e) => setNewContributionStatus(e.target.value as any)}
+                      className={selectClass}
+                    >
+                      <option value="pending">Pendente (Aguardando Pix)</option>
+                      <option value="confirmed">Confirmado (Pago)</option>
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => handleAddManualContribution(activeGiftForModal)}
+                      className="bg-wedding-800 text-white p-2 rounded hover:bg-wedding-700 font-serif w-full h-[38px] flex items-center justify-center gap-1 text-sm cursor-pointer"
+                    >
+                      <Plus size={16} /> Adicionar
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* List of Existing Contributions */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Contribuições Atuais ({activeGiftForModal.contributions?.length || 0})</h4>
+                
+                {activeGiftForModal.contributions && activeGiftForModal.contributions.length > 0 ? (
+                  <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
+                    {activeGiftForModal.contributions.map(c => {
+                      const isEditing = editingContributionId === c.id;
+                      return (
+                        <div key={c.id} className="flex flex-col md:flex-row md:items-center justify-between bg-white p-3 border border-wedding-200 rounded shadow-sm gap-2">
+                          {isEditing ? (
+                            <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-2">
+                              <input
+                                type="text"
+                                value={editContribName}
+                                onChange={(e) => setEditContribName(e.target.value)}
+                                className="p-1 text-xs border border-wedding-300 rounded focus:ring-1 focus:ring-wedding-500"
+                              />
+                              <input
+                                type="number"
+                                value={editContribAmount}
+                                onChange={(e) => setEditContribAmount(Number(e.target.value))}
+                                className="p-1 text-xs border border-wedding-300 rounded focus:ring-1 focus:ring-wedding-500"
+                              />
+                              <select
+                                value={editContribStatus}
+                                onChange={(e) => setEditContribStatus(e.target.value as any)}
+                                className="p-1 text-xs border border-wedding-300 rounded focus:ring-1 focus:ring-wedding-500"
+                              >
+                                <option value="pending">Pendente</option>
+                                <option value="confirmed">Confirmado</option>
+                              </select>
+                            </div>
+                          ) : (
+                            <div>
+                              <span className="font-bold text-wedding-800">{c.buyerName}</span>
+                              <span className="text-gray-500 ml-2 font-medium">R$ {c.amount.toFixed(2)}</span>
+                              <span className="text-xs text-gray-400 ml-2">({c.createdAt ? new Date(c.createdAt).toLocaleDateString() : 'Sem data'})</span>
+                            </div>
+                          )}
+                          
+                          <div className="flex items-center gap-2 self-end md:self-auto">
+                            {isEditing ? (
+                              <>
+                                <button
+                                  onClick={() => handleSaveContributionEdit(activeGiftForModal, c)}
+                                  className="bg-green-600 text-white px-2 py-1 rounded text-xs hover:bg-green-700 cursor-pointer font-serif"
+                                >
+                                  Salvar
+                                </button>
+                                <button
+                                  onClick={() => setEditingContributionId(null)}
+                                  className="bg-gray-400 text-white px-2 py-1 rounded text-xs hover:bg-gray-500 cursor-pointer font-serif"
+                                >
+                                  Cancelar
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                {c.status === 'confirmed' ? (
+                                  <span className="text-green-600 text-xs font-bold flex items-center gap-1"><CheckCircle size={14}/>Confirmado</span>
+                                ) : (
+                                  <>
+                                    <span className="text-yellow-600 text-xs font-bold animate-pulse">Pendente</span>
+                                    <button 
+                                      onClick={() => handleConfirmContributionClick(activeGiftForModal, c)}
+                                      className="bg-green-500 text-white px-2 py-1 rounded text-xs hover:bg-green-600 cursor-pointer font-serif"
+                                    >
+                                      Confirmar
+                                    </button>
+                                  </>
+                                )}
+                                <button
+                                  onClick={() => {
+                                    setEditingContributionId(c.id);
+                                    setEditContribName(c.buyerName);
+                                    setEditContribAmount(c.amount);
+                                    setEditContribStatus(c.status);
+                                  }}
+                                  className="text-blue-500 hover:text-blue-700 cursor-pointer p-1"
+                                  title="Editar Contribuição"
+                                >
+                                  <Edit2 size={16} />
+                                </button>
+                                <button 
+                                  onClick={() => setConfirmModal({ 
+                                    isOpen: true, 
+                                    message: `Excluir contribuição de R$ ${c.amount.toFixed(2)} de ${c.buyerName}?`, 
+                                    onConfirm: () => removeContribution(activeGiftForModal.id, c.id) 
+                                  })}
+                                  className="text-red-500 hover:text-red-700 cursor-pointer p-1"
+                                  title="Excluir Contribuição"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500 italic p-4 bg-white rounded border border-wedding-100 text-center">Nenhuma contribuição registrada para este presente.</p>
+                )}
+              </div>
+              
+              <div className="flex justify-end pt-4 border-t border-wedding-200 shrink-0">
+                <button
+                  onClick={() => setExpandedGiftId(null)}
+                  className="px-6 py-2 bg-wedding-800 text-white font-serif rounded hover:bg-wedding-700 transition"
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </Modal>
+        );
+      })()}
 
       {/* Confirmation Modal */}
       <Modal 
