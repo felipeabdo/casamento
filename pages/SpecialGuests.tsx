@@ -352,7 +352,7 @@ export const SpecialGuests: React.FC = () => {
                         Aviso Importante: Cerimônia no Gramado
                       </h4>
                       <p className="text-emerald-800 text-xs leading-relaxed">
-                        Como a nossa celebração será no <strong>gramado</strong>, recomendamos carinhosamente a todas as mulheres que <strong>não utilizem salto de bico fino</strong> (stiletto), pois ele pode afundar na grama. Sugerimos saltos mais grossos (bloco), anabela, rasteiras ou sapatilhas para seu total conforto!
+                        Como a nossa celebração será no <strong>gramado</strong>, recomendamos carinhosamente a todas as mulheres o uso de <strong>salto em bloco (ou salto grosso), anabela, rasteiras ou sapatilhas</strong>, para seu total conforto!
                       </p>
                     </div>
                   </div>
