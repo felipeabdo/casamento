@@ -31,7 +31,8 @@
         "imageUrl": { "type": "string" },
         "purchasedCount": { "type": "number" },
         "status": { "type": "string", "enum": ["available", "pending", "confirmed"] },
-        "buyerName": { "type": "string" }
+        "buyerName": { "type": "string" },
+        "order": { "type": "number" }
       }
     },
     "Message": {

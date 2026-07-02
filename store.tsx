@@ -28,6 +28,7 @@ interface StoreContextType extends AppState {
   addGift: (gift: Omit<Gift, 'id' | 'purchasedCount' | 'status'>) => void;
   updateGift: (id: string, gift: Partial<Gift>) => void;
   removeGift: (id: string) => void;
+  updateGiftsOrder: (orderedGifts: Gift[]) => Promise<void>;
   
   markGiftAsPending: (id: string, buyerName: string) => void;
   confirmGiftPayment: (id: string) => void;
@@ -117,6 +118,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     // 2. Gifts Listener
     const unsubGifts = onSnapshot(collection(db, "gifts"), (snapshot) => {
         const giftsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Gift));
+        giftsData.sort((a, b) => {
+          const orderA = a.order ?? 0;
+          const orderB = b.order ?? 0;
+          if (orderA !== orderB) return orderA - orderB;
+          return a.name.localeCompare(b.name);
+        });
         if (giftsData.length === 0 && loading) {
              // Optional: If empty on first load, seed with initials
              // But we avoid auto-seeding to prevent duplicates if user deleted all.
@@ -321,9 +328,19 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const newGift = {
       ...gift,
       purchasedCount: 0,
-      status: 'available'
+      status: 'available',
+      order: state.gifts.length
     };
     await addDoc(collection(db, "gifts"), newGift);
+  };
+
+  const updateGiftsOrder = async (orderedGifts: Gift[]) => {
+    const batch = writeBatch(db);
+    orderedGifts.forEach((gift, index) => {
+      const giftRef = doc(db, "gifts", gift.id);
+      batch.update(giftRef, { order: index });
+    });
+    await batch.commit();
   };
 
   const updateGift = async (id: string, updatedGift: Partial<Gift>) => {
@@ -808,6 +825,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       addGift,
       updateGift,
       removeGift,
+      updateGiftsOrder,
       markGiftAsPending,
       confirmGiftPayment,
       addContribution,

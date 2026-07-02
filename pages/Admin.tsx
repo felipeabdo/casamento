@@ -25,7 +25,7 @@ export const AdminPage: React.FC = () => {
   
   // States for Gift Form
   const [editingGiftId, setEditingGiftId] = useState<string | null>(null);
-  const [newGift, setNewGift] = useState<Partial<Gift>>({ name: '', price: 0, description: '', imageUrl: 'https://picsum.photos/400/300', status: 'available', buyerName: '' });
+  const [newGift, setNewGift] = useState<Partial<Gift>>({ name: '', price: 0, description: '', imageUrl: 'https://picsum.photos/400/300', status: 'available', buyerName: '', order: undefined });
   const [selectedGuestIdForGiftForm, setSelectedGuestIdForGiftForm] = useState<string>('');
 
   // Contribution state variables
@@ -148,7 +148,8 @@ export const AdminPage: React.FC = () => {
         imageUrl: gift.imageUrl,
         externalLink: gift.externalLink,
         status: gift.status || 'available',
-        buyerName: gift.buyerName || ''
+        buyerName: gift.buyerName || '',
+        order: gift.order !== undefined ? gift.order : 0
     });
     // Set matching guest ID if exists
     const matchingGuest = guests.find(g => g.name === gift.buyerName);
@@ -164,7 +165,7 @@ export const AdminPage: React.FC = () => {
 
   const cancelEditGift = () => {
     setEditingGiftId(null);
-    setNewGift({ name: '', price: 0, description: '', imageUrl: 'https://picsum.photos/400/300', externalLink: '', status: 'available', buyerName: '' });
+    setNewGift({ name: '', price: 0, description: '', imageUrl: 'https://picsum.photos/400/300', externalLink: '', status: 'available', buyerName: '', order: undefined });
     setSelectedGuestIdForGiftForm('');
   };
 
@@ -179,7 +180,8 @@ export const AdminPage: React.FC = () => {
             imageUrl: newGift.imageUrl || 'https://picsum.photos/400/300',
             externalLink: newGift.externalLink || '',
             status: newGift.status || 'available',
-            buyerName: newGift.buyerName || ''
+            buyerName: newGift.buyerName || '',
+            order: newGift.order !== undefined ? Number(newGift.order) : 0
         });
         setEditingGiftId(null);
       } else {
@@ -190,10 +192,11 @@ export const AdminPage: React.FC = () => {
             imageUrl: newGift.imageUrl || 'https://picsum.photos/400/300',
             externalLink: newGift.externalLink || '',
             status: 'available',
-            buyerName: ''
+            buyerName: '',
+            order: newGift.order !== undefined ? Number(newGift.order) : gifts.length
         } as any);
       }
-      setNewGift({ name: '', price: 0, description: '', imageUrl: 'https://picsum.photos/400/300', externalLink: '', status: 'available', buyerName: '' });
+      setNewGift({ name: '', price: 0, description: '', imageUrl: 'https://picsum.photos/400/300', externalLink: '', status: 'available', buyerName: '', order: undefined });
       setSelectedGuestIdForGiftForm('');
     }
   };
@@ -1188,7 +1191,7 @@ export const AdminPage: React.FC = () => {
                   {editingGiftId ? <Edit2 size={20} /> : <Plus size={20} />} 
                   {editingGiftId ? 'Editar Presente' : 'Adicionar Novo Presente'}
                 </h3>
-                <form onSubmit={handleGiftSubmit} className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                <form onSubmit={handleGiftSubmit} className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
                   <div className="md:col-span-1">
                     <label className="block text-xs font-bold text-wedding-600 uppercase mb-1">Nome</label>
                     <input 
@@ -1228,7 +1231,17 @@ export const AdminPage: React.FC = () => {
                       placeholder="https://..."
                     />
                   </div>
-                  <div className="md:col-span-4">
+                  <div className="md:col-span-1">
+                    <label className="block text-xs font-bold text-wedding-600 uppercase mb-1">Ordem (Posição)</label>
+                    <input 
+                      type="number"
+                      value={newGift.order !== undefined ? newGift.order : ''}
+                      onChange={e => setNewGift({...newGift, order: e.target.value !== '' ? Number(e.target.value) : undefined})}
+                      className={inputClass}
+                      placeholder="Ex: 0, 1, 2..."
+                    />
+                  </div>
+                  <div className="md:col-span-5">
                      <label className="block text-xs font-bold text-wedding-600 uppercase mb-1">Descrição</label>
                      <input 
                       type="text"
@@ -1237,18 +1250,8 @@ export const AdminPage: React.FC = () => {
                       className={inputClass}
                     />
                   </div>
-                  <div className="flex gap-2 md:col-span-4">
-                     <button type="submit" className="bg-wedding-800 text-white p-2 rounded hover:bg-wedding-700 font-serif h-[42px] flex-1">
-                        {editingGiftId ? 'Atualizar' : 'Adicionar'}
-                     </button>
-                     {editingGiftId && (
-                         <button type="button" onClick={cancelEditGift} className="bg-gray-500 text-white p-2 rounded hover:bg-gray-600 font-serif h-[42px]">
-                            Cancelar
-                         </button>
-                     )}
-                  </div>
                   {editingGiftId && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:col-span-4 mt-2">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:col-span-5 mt-2">
                       <div>
                         <label className="block text-xs font-bold text-wedding-600 uppercase mb-1">Status do Presente</label>
                         <select
@@ -1297,6 +1300,16 @@ export const AdminPage: React.FC = () => {
                       </div>
                     </div>
                   )}
+                  <div className="flex gap-2 md:col-span-5 mt-2">
+                     <button type="submit" className="bg-wedding-800 text-white p-2 rounded hover:bg-wedding-700 font-serif h-[42px] flex-1">
+                        {editingGiftId ? 'Atualizar' : 'Adicionar'}
+                     </button>
+                     {editingGiftId && (
+                          <button type="button" onClick={cancelEditGift} className="bg-gray-500 text-white p-2 rounded hover:bg-gray-600 font-serif h-[42px]">
+                             Cancelar
+                          </button>
+                     )}
+                  </div>
                 </form>
               </div>
 

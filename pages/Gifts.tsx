@@ -3,7 +3,7 @@ import { Navigate } from 'react-router-dom';
 import { useStore, useTheme } from '../store';
 import { Modal } from '../components/Modal';
 import { QRCodeSVG } from 'qrcode.react';
-import { Gift as GiftIcon, Heart, Copy, CheckCircle, CreditCard, ExternalLink, Loader2 } from 'lucide-react';
+import { Gift as GiftIcon, Heart, Copy, CheckCircle, CreditCard, ExternalLink, Loader2, Move } from 'lucide-react';
 import { Recorder } from '../components/MediaRecorder';
 import { MediaUploader } from '../components/MediaUploader';
 import { RichTextEditor } from '../components/RichTextEditor';
@@ -19,7 +19,7 @@ const CLOUDINARY_CLOUD_NAME = "dp1qpjvdf".trim(); // .trim() remove espaços aci
 const CLOUDINARY_UPLOAD_PRESET = "casamento_upload".trim(); // Deve ser IDÊNTICO ao criado no painel
 
 export const GiftsPage: React.FC = () => {
-  const { gifts, settings, markGiftAsPending, addContribution, addMessage, currentGuest, isAuthenticated } = useStore();
+  const { gifts, settings, markGiftAsPending, addContribution, addMessage, currentGuest, isAuthenticated, updateGiftsOrder } = useStore();
   
   if (!isAuthenticated && !currentGuest) {
      return <Navigate to="/login" replace />;
@@ -27,6 +27,8 @@ export const GiftsPage: React.FC = () => {
 
   const themeColor = useTheme();
   const [selectedGift, setSelectedGift] = useState<string | null>(null);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   
   // States for Purchase Flow
   const [buyerName, setBuyerName] = useState('');
@@ -316,8 +318,16 @@ export const GiftsPage: React.FC = () => {
 
       {/* Grid */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {isAuthenticated && (
+          <div className="mb-6 p-4 bg-wedding-100 border border-wedding-300 text-wedding-800 text-sm rounded-lg flex items-center gap-2">
+            <Move size={18} className="animate-bounce" />
+            <span>
+              <strong>Modo Administrador:</strong> Você pode alterar a ordem de exibição dos presentes clicando e arrastando os cartões para a posição desejada!
+            </span>
+          </div>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {gifts.map((gift) => {
+          {gifts.map((gift, index) => {
             const isConfirmed = gift.status === 'confirmed';
             const totalArrecadado = isConfirmed 
               ? Math.max(gift.price, gift.contributions?.reduce((sum, c) => sum + c.amount, 0) || 0) 
@@ -325,7 +335,55 @@ export const GiftsPage: React.FC = () => {
             const progressPercent = Math.min(100, (totalArrecadado / gift.price) * 100);
             
             return (
-                <div key={gift.id} className={`rounded-sm shadow-md overflow-hidden transition-all duration-300 border group flex flex-col h-full ${getCardStyle(gift.status)}`}>
+              <div 
+                key={gift.id} 
+                draggable={isAuthenticated}
+                onDragStart={() => {
+                  if (isAuthenticated) setDraggedIndex(index);
+                }}
+                onDragOver={(e) => {
+                  if (isAuthenticated) {
+                    e.preventDefault();
+                    setDragOverIndex(index);
+                  }
+                }}
+                onDragLeave={() => {
+                  if (isAuthenticated) setDragOverIndex(null);
+                }}
+                onDrop={async (e) => {
+                  if (isAuthenticated) {
+                    e.preventDefault();
+                    setDragOverIndex(null);
+                    if (draggedIndex !== null && draggedIndex !== index) {
+                      const updatedGifts = [...gifts];
+                      const [draggedItem] = updatedGifts.splice(draggedIndex, 1);
+                      updatedGifts.splice(index, 0, draggedItem);
+                      setDraggedIndex(null);
+                      try {
+                        await updateGiftsOrder(updatedGifts);
+                      } catch (error) {
+                        console.error("Erro ao reordenar presentes:", error);
+                      }
+                    }
+                  }
+                }}
+                onDragEnd={() => {
+                  setDraggedIndex(null);
+                  setDragOverIndex(null);
+                }}
+                className={`rounded-sm shadow-md overflow-hidden transition-all duration-300 border group flex flex-col h-full relative ${getCardStyle(gift.status)} ${
+                  isAuthenticated ? 'cursor-move hover:border-wedding-400' : ''
+                } ${
+                  draggedIndex === index ? 'opacity-40 border-dashed border-wedding-300' : ''
+                } ${
+                  dragOverIndex === index ? 'border-2 border-wedding-500 scale-102 shadow-lg' : ''
+                }`}
+              >
+                {isAuthenticated && (
+                  <div className="absolute top-0 left-0 bg-wedding-800 text-white p-2 m-2 shadow-sm rounded-full flex items-center justify-center cursor-move z-10 animate-pulse" title="Arraste para reordenar">
+                    <Move size={14} />
+                  </div>
+                )}
                 <div className="h-64 overflow-hidden relative flex-shrink-0">
                     <img 
                     src={gift.imageUrl} 
@@ -370,7 +428,7 @@ export const GiftsPage: React.FC = () => {
                         </button>
                     </div>
                 </div>
-                </div>
+              </div>
             );
           })}
         </div>

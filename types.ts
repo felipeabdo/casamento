@@ -18,6 +18,7 @@ export interface Gift {
   buyerName?: string;
   contributions?: Contribution[];
   externalLink?: string;
+  order?: number;
 }
 
 export interface Message {
