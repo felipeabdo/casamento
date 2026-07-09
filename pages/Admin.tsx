@@ -67,6 +67,7 @@ export const AdminPage: React.FC = () => {
   const [selectedGuestForWa, setSelectedGuestForWa] = useState<any>(null);
   const [waMessageText, setWaMessageText] = useState('');
   const [waPhoneNumber, setWaPhoneNumber] = useState('');
+  const [showManualPhoneInput, setShowManualPhoneInput] = useState(false);
 
   const categoriesList = ['Comum', 'Padrinho', 'Madrinha', 'Padrinhos', 'Madrinhas', 'Demoiselle', 'Mãe da Noiva', 'Pai da Noiva', 'Pais da Noiva', 'Mãe do Noivo', 'Pai do Noivo', 'Pais do Noivo', 'Noivo', 'Noiva'];
 
@@ -168,6 +169,7 @@ export const AdminPage: React.FC = () => {
   const handleOpenWaModal = (guest: any) => {
     setSelectedGuestForWa(guest);
     setWaPhoneNumber(guest.phone || '');
+    setShowManualPhoneInput(!guest.phone);
     
     const templates = settings.whatsappTemplates || {};
     const cat = guest.category || 'Comum';
@@ -1994,15 +1996,47 @@ export const AdminPage: React.FC = () => {
       >
         <div className="p-6 space-y-4 max-h-[80vh] overflow-y-auto flex flex-col">
           <div>
-            <label className="block text-sm font-bold text-wedding-700 mb-1">Telefone do Convidado</label>
-            <input
-              type="text"
-              value={waPhoneNumber}
-              onChange={(e) => setWaPhoneNumber(e.target.value)}
-              placeholder="Ex: +55 (00) 0 0000-0000 ou 5500000000000"
-              className={inputClass}
-            />
-            <p className="text-[10px] text-gray-500 mt-1">Insira o número completo com DDD (ex: 11987654321). Se você alterar aqui, o número também será salvo no cadastro deste convidado.</p>
+            {!showManualPhoneInput ? (
+              <div className="bg-wedding-50 border border-wedding-200 p-4 rounded-lg flex justify-between items-center shadow-sm">
+                <div>
+                  <span className="block text-xs font-bold text-wedding-700 uppercase tracking-wider mb-0.5">Telefone Cadastrado</span>
+                  <span className="text-sm font-semibold font-mono text-wedding-900">{waPhoneNumber}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowManualPhoneInput(true)}
+                  className="text-xs text-wedding-700 hover:text-wedding-950 underline font-medium cursor-pointer"
+                >
+                  Alterar número
+                </button>
+              </div>
+            ) : (
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-sm font-bold text-wedding-700">Telefone do Convidado</label>
+                  {selectedGuestForWa?.phone && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWaPhoneNumber(selectedGuestForWa.phone);
+                        setShowManualPhoneInput(false);
+                      }}
+                      className="text-xs text-wedding-700 hover:text-wedding-950 underline font-medium cursor-pointer"
+                    >
+                      Usar cadastrado
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  value={waPhoneNumber}
+                  onChange={(e) => setWaPhoneNumber(e.target.value)}
+                  placeholder="Ex: +55 (00) 0 0000-0000 ou 5500000000000"
+                  className={inputClass}
+                />
+                <p className="text-[10px] text-gray-500 mt-1">Insira o número completo com DDD (ex: 11987654321). Se você alterar aqui, o número também será salvo no cadastro deste convidado.</p>
+              </div>
+            )}
           </div>
 
           <div>
