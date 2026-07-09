@@ -17,7 +17,8 @@
         "loadingTitle": { "type": "string" },
         "loadingSubtitle": { "type": "string" },
         "paymentUrl": { "type": "string" },
-        "showMessagesToPublic": { "type": "boolean" }
+        "showMessagesToPublic": { "type": "boolean" },
+        "whatsappTemplates": { "type": "object" }
       }
     },
     "Gift": {

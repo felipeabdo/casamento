@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../store';
 import { useNavigate } from 'react-router-dom';
-import { Trash2, Plus, Edit2, Wand2, Loader2, Save, LogOut, Eye, EyeOff, Image as ImageIcon, CheckCircle, Video, Mic, Clock, X } from 'lucide-react';
+import { Trash2, Plus, Edit2, Wand2, Loader2, Save, LogOut, Eye, EyeOff, Image as ImageIcon, CheckCircle, Video, Mic, Clock, X, MessageCircle } from 'lucide-react';
 import { generatePageContent } from '../services/geminiService';
 import { Gift, Page, Section, Contribution } from '../types';
 import { Modal } from '../components/Modal';
@@ -59,6 +59,16 @@ export const AdminPage: React.FC = () => {
 
   const [sortColumn, setSortColumn] = useState<string>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  // States for WhatsApp Message Templates & Sending Modal
+  const [selectedTemplateCategory, setSelectedTemplateCategory] = useState<string>('Comum');
+  const [tempTemplateText, setTempTemplateText] = useState<string>('');
+  const [isWaModalOpen, setIsWaModalOpen] = useState(false);
+  const [selectedGuestForWa, setSelectedGuestForWa] = useState<any>(null);
+  const [waMessageText, setWaMessageText] = useState('');
+  const [waPhoneNumber, setWaPhoneNumber] = useState('');
+
+  const categoriesList = ['Comum', 'Padrinho', 'Madrinha', 'Padrinhos', 'Madrinhas', 'Demoiselle', 'Mãe da Noiva', 'Pai da Noiva', 'Pais da Noiva', 'Mãe do Noivo', 'Pai do Noivo', 'Pais do Noivo', 'Noivo', 'Noiva'];
 
   const handleSort = (column: string) => {
     if (sortColumn === column) {
@@ -133,6 +143,69 @@ export const AdminPage: React.FC = () => {
         setHomeLocation({ ...locationSection });
     }
   }, [pages]);
+
+  // Synchronize temp template text when selected category or settings change
+  useEffect(() => {
+    const templates = settings.whatsappTemplates || {};
+    const currentText = templates[selectedTemplateCategory];
+    if (currentText !== undefined) {
+      setTempTemplateText(currentText);
+    } else {
+      setTempTemplateText(`Olá, {nome}! Tudo bem?\n\nGostaríamos de convidá-lo(a) para acessar o nosso site de casamento e confirmar sua presença.\n\nSua categoria: {categoria}\nUsuário de login: {usuario}\nSenha: {senha}\n\nPara acessar, entre no link: ${window.location.origin}\n\nEsperamos você!`);
+    }
+  }, [selectedTemplateCategory, settings.whatsappTemplates]);
+
+  const handleSaveTemplate = async (category: string, text: string) => {
+    const currentTemplates = settings.whatsappTemplates || {};
+    const updatedTemplates = {
+      ...currentTemplates,
+      [category]: text
+    };
+    await updateSettings({ whatsappTemplates: updatedTemplates });
+    alert(`Modelo para a categoria "${category}" salvo com sucesso!`);
+  };
+
+  const handleOpenWaModal = (guest: any) => {
+    setSelectedGuestForWa(guest);
+    setWaPhoneNumber(guest.phone || '');
+    
+    const templates = settings.whatsappTemplates || {};
+    const cat = guest.category || 'Comum';
+    const template = templates[cat] || `Olá, {nome}! Tudo bem?\n\nGostaríamos de convidá-lo(a) para acessar o nosso site de casamento e confirmar sua presença.\n\nSua categoria: {categoria}\nUsuário de login: {usuario}\nSenha: {senha}\n\nPara acessar, entre no link: ${window.location.origin}\n\nEsperamos você!`;
+    
+    let compiled = template;
+    compiled = compiled.replace(/{nome}/gi, guest.name || '');
+    compiled = compiled.replace(/{usuario}/gi, guest.username || '');
+    compiled = compiled.replace(/{senha}/gi, guest.password || '');
+    compiled = compiled.replace(/{categoria}/gi, guest.category || 'Comum');
+    
+    setWaMessageText(compiled);
+    setIsWaModalOpen(true);
+  };
+
+  const handleSendWaMessage = async () => {
+    if (!waPhoneNumber) {
+      alert("Por favor, preencha o número de telefone do convidado.");
+      return;
+    }
+    
+    let cleanPhone = waPhoneNumber.replace(/\D/g, '');
+    if (cleanPhone.length === 10 || cleanPhone.length === 11) {
+      cleanPhone = '55' + cleanPhone;
+    }
+    
+    if (selectedGuestForWa && waPhoneNumber !== selectedGuestForWa.phone) {
+      try {
+        await updateGuest(selectedGuestForWa.id, { phone: waPhoneNumber });
+      } catch (err) {
+        console.error("Erro ao atualizar o telefone do convidado:", err);
+      }
+    }
+    
+    setIsWaModalOpen(false);
+    const waUrl = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(waMessageText)}`;
+    window.open(waUrl, '_blank');
+  };
 
   const handleLogout = () => {
     logout();
@@ -735,6 +808,66 @@ export const AdminPage: React.FC = () => {
                  </div>
               </div>
 
+              {/* WhatsApp Message Templates */}
+              <div className="bg-wedding-50/50 p-6 rounded border border-wedding-200">
+                 <h3 className="text-xl font-serif text-wedding-800 mb-2 pb-2 border-b border-wedding-200">Modelos de Convite (WhatsApp)</h3>
+                 <p className="text-sm text-wedding-600 mb-4">Configure mensagens personalizadas por categoria de convidado. Use as variáveis abaixo no seu texto para preencher automaticamente com os dados do convidado:</p>
+                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
+                   <div className="bg-white p-2 rounded border border-wedding-100 text-center font-mono text-xs text-wedding-800">{"{nome}"} <span className="block text-[10px] text-gray-500 font-sans">Nome do Convidado</span></div>
+                   <div className="bg-white p-2 rounded border border-wedding-100 text-center font-mono text-xs text-wedding-800">{"{usuario}"} <span className="block text-[10px] text-gray-500 font-sans">Login do Convidado</span></div>
+                   <div className="bg-white p-2 rounded border border-wedding-100 text-center font-mono text-xs text-wedding-800">{"{senha}"} <span className="block text-[10px] text-gray-500 font-sans">Senha do Convidado</span></div>
+                   <div className="bg-white p-2 rounded border border-wedding-100 text-center font-mono text-xs text-wedding-800">{"{categoria}"} <span className="block text-[10px] text-gray-500 font-sans">Categoria</span></div>
+                 </div>
+
+                 <div className="space-y-4">
+                   <div>
+                     <label className="block text-sm font-bold text-wedding-700 mb-2">Selecione a Categoria para Editar</label>
+                     <select
+                       value={selectedTemplateCategory}
+                       onChange={(e) => setSelectedTemplateCategory(e.target.value)}
+                       className={selectClass}
+                     >
+                       {categoriesList.map(cat => (
+                         <option key={cat} value={cat}>{cat}</option>
+                       ))}
+                     </select>
+                   </div>
+
+                   <div>
+                     <div className="flex justify-between items-center mb-1">
+                       <label className="block text-sm font-bold text-wedding-700">Texto do Convite para {selectedTemplateCategory}</label>
+                       <button
+                         type="button"
+                         onClick={() => {
+                           const defaultTpl = `Olá, {nome}! Tudo bem?\n\nGostaríamos de convidá-lo(a) para acessar o nosso site de casamento e confirmar sua presença.\n\nSua categoria: {categoria}\nUsuário de login: {usuario}\nSenha: {senha}\n\nPara acessar, entre no link: ${window.location.origin}\n\nEsperamos você!`;
+                           handleSaveTemplate(selectedTemplateCategory, defaultTpl);
+                         }}
+                         className="text-xs text-wedding-800 hover:underline"
+                       >
+                         Resetar para o Padrão
+                       </button>
+                     </div>
+                     <textarea
+                       rows={6}
+                       value={tempTemplateText}
+                       onChange={(e) => setTempTemplateText(e.target.value)}
+                       className={inputClass}
+                       placeholder="Escreva a mensagem aqui..."
+                     />
+                   </div>
+
+                   <div className="flex justify-end pt-2">
+                     <button 
+                       type="button"
+                       onClick={() => handleSaveTemplate(selectedTemplateCategory, tempTemplateText)} 
+                       className="bg-wedding-800 text-white px-6 py-2 rounded hover:bg-wedding-700 font-serif shadow-md flex items-center gap-2"
+                     >
+                       <Save size={16} /> Salvar Modelo para {selectedTemplateCategory}
+                     </button>
+                   </div>
+                 </div>
+              </div>
+
               {/* Basic Info (Existing) */}
               <div className="bg-wedding-50/50 p-6 rounded border border-wedding-200">
                  <h2 className="text-2xl font-serif text-wedding-800 mb-6 border-b border-wedding-200 pb-2">Informações Básicas</h2>
@@ -1143,7 +1276,19 @@ export const AdminPage: React.FC = () => {
                   <tbody className="bg-white divide-y divide-wedding-200">
                     {sortedGuests.map(guest => (
                       <tr key={guest.id} className={editingGuestId === guest.id ? "bg-wedding-50" : ""}>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-wedding-900">{guest.name}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-wedding-900">
+                          <div className="flex items-center gap-2">
+                            <span>{guest.name}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenWaModal(guest)}
+                              className="text-green-600 hover:text-green-700 bg-green-50 hover:bg-green-100 p-1.5 rounded-full transition-colors flex items-center justify-center shrink-0"
+                              title="Enviar convite por WhatsApp"
+                            >
+                              <MessageCircle size={14} />
+                            </button>
+                          </div>
+                        </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-wedding-600">
                           <span className={`px-2 py-1 rounded-full text-xs ${guest.category && guest.category !== 'Comum' ? 'bg-wedding-100 text-wedding-800 font-bold' : 'bg-gray-100 text-gray-600'}`}>
                             {guest.category || 'Comum'}
@@ -1838,6 +1983,55 @@ export const AdminPage: React.FC = () => {
                   Confirmar
                 </button>
             </div>
+        </div>
+      </Modal>
+
+      {/* WhatsApp Send Modal */}
+      <Modal
+        isOpen={isWaModalOpen}
+        onClose={() => setIsWaModalOpen(false)}
+        title={`Enviar Mensagem para ${selectedGuestForWa?.name || ''}`}
+      >
+        <div className="p-6 space-y-4 max-h-[80vh] overflow-y-auto flex flex-col">
+          <div>
+            <label className="block text-sm font-bold text-wedding-700 mb-1">Telefone do Convidado</label>
+            <input
+              type="text"
+              value={waPhoneNumber}
+              onChange={(e) => setWaPhoneNumber(e.target.value)}
+              placeholder="Ex: +55 (00) 0 0000-0000 ou 5500000000000"
+              className={inputClass}
+            />
+            <p className="text-[10px] text-gray-500 mt-1">Insira o número completo com DDD (ex: 11987654321). Se você alterar aqui, o número também será salvo no cadastro deste convidado.</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold text-wedding-700 mb-1">Mensagem (Você pode alterar manualmente se quiser)</label>
+            <textarea
+              rows={8}
+              value={waMessageText}
+              onChange={(e) => setWaMessageText(e.target.value)}
+              className={inputClass}
+              placeholder="Digite a mensagem..."
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t border-wedding-100 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsWaModalOpen(false)}
+              className="px-6 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 transition"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleSendWaMessage}
+              className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white font-serif rounded transition flex items-center gap-2 shadow-md"
+            >
+              Enviar via WhatsApp
+            </button>
+          </div>
         </div>
       </Modal>
     </div>

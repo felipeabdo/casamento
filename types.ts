@@ -103,6 +103,7 @@ export interface AppSettings {
   // Novos campos
   paymentUrl?: string; // Link para PicPay/MercadoPago
   showMessagesToPublic?: boolean; // Controle de visibilidade do mural
+  whatsappTemplates?: Record<string, string>;
 }
 
 export interface Photo {
