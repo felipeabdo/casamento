@@ -36,6 +36,18 @@ export interface Message {
   status?: 'pending' | 'approved';
 }
 
+export interface BannerImage {
+  id: string;
+  url: string;
+  landscapeUrl?: string;
+  portraitUrl?: string;
+  verticalAlign?: 'top' | 'center' | 'bottom';
+  cropState?: {
+    landscape?: { x: number; y: number; zoom: number };
+    portrait?: { x: number; y: number; zoom: number };
+  };
+}
+
 export interface Section {
   id: string;
   type: 'hero' | 'text' | 'image-text' | 'gallery' | 'location';
@@ -43,6 +55,7 @@ export interface Section {
   content?: string;
   imageUrl?: string; // Fallback / Primary image
   imageUrls?: string[]; // Added for Slideshow/Carousel
+  bannerImages?: BannerImage[]; // Detailed banner images with orientations
   imagePosition?: 'left' | 'right';
   locationDetails?: {
     address: string;
@@ -62,6 +75,17 @@ export interface Page {
     admin: boolean;
   };
   sections: Section[];
+  preWeddingVideo?: {
+    url: string;
+    type: 'file' | 'url';
+    firebasePath?: string;
+    cloudinaryPublicId?: string;
+  };
+  preWeddingPhotos?: {
+    url: string;
+    firebasePath?: string;
+    cloudinaryPublicId?: string;
+  }[];
 }
 
 export type GuestCategory = 'Comum' | 'Padrinho' | 'Madrinha' | 'Padrinhos' | 'Madrinhas' | 'Demoiselle' | 'Mãe da Noiva' | 'Pai da Noiva' | 'Pais da Noiva' | 'Mãe do Noivo' | 'Pai do Noivo' | 'Pais do Noivo' | 'Noivo' | 'Noiva';

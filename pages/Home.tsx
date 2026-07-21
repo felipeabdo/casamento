@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../store';
 import { useParams, useLocation } from 'react-router-dom';
-import { Section } from '../types';
+import { Section, BannerImage } from '../types';
 
 import { MapPin, Navigation, Car, Map, X, Clock, Heart } from 'lucide-react';
 
@@ -135,34 +135,56 @@ const LocationSection: React.FC<SectionRendererProps> = ({ section }) => {
 };
 
 const HeroSection: React.FC<SectionRendererProps> = ({ section }) => {
-  // Determine which images to use. If imageUrls is present and has items, use it. 
-  // Otherwise fallback to single imageUrl wrapped in array, or empty array.
-  const images = section.imageUrls && section.imageUrls.length > 0 
-    ? section.imageUrls 
-    : (section.imageUrl ? [section.imageUrl] : []);
+  // Normalize images list supporting legacy formats and the new detailed bannerImages
+  const bannerImages = section.bannerImages && section.bannerImages.length > 0
+    ? section.bannerImages
+    : (section.imageUrls && section.imageUrls.length > 0 
+        ? section.imageUrls.map((url, i) => ({ id: `legacy-${i}`, url, landscapeUrl: url, portraitUrl: url }))
+        : (section.imageUrl 
+            ? [{ id: 'legacy-single', url: section.imageUrl, landscapeUrl: section.imageUrl, portraitUrl: section.imageUrl }] 
+            : []
+          )
+      );
 
   const [currentIndex, setCurrentIndex] = useState(0);
 
   useEffect(() => {
-    if (images.length <= 1) return;
+    if (bannerImages.length <= 1) return;
 
     const interval = setInterval(() => {
-      setCurrentIndex((prevIndex) => (prevIndex + 1) % images.length);
+      setCurrentIndex((prevIndex) => (prevIndex + 1) % bannerImages.length);
     }, 5000); // Change every 5 seconds
 
     return () => clearInterval(interval);
-  }, [images.length]);
+  }, [bannerImages.length]);
 
   return (
     <div className="relative h-[80vh] w-full flex items-center justify-center overflow-hidden bg-wedding-900">
       {/* Slideshow Backgrounds */}
-      {images.length > 0 ? (
-        images.map((img, index) => (
+      {bannerImages.length > 0 ? (
+        bannerImages.map((bImg, index) => (
           <div 
-            key={index}
+            key={bImg.id || index}
             className={`absolute inset-0 z-0 transition-opacity duration-1000 ease-in-out ${index === currentIndex ? 'opacity-100' : 'opacity-0'}`}
           >
-            <img src={img} alt={`Background ${index + 1}`} className="w-full h-full object-cover" />
+            <picture className="block w-full h-full">
+              {/* If landscapeUrl exists, show it on screens with min-width: 768px (md and larger) */}
+              {bImg.landscapeUrl && <source media="(min-width: 768px)" srcSet={bImg.landscapeUrl} />}
+              {/* If portraitUrl exists, show it on screens with max-width: 767px (mobile) */}
+              {bImg.portraitUrl && <source media="(max-width: 767px)" srcSet={bImg.portraitUrl} />}
+              {/* Fallback image */}
+              <img 
+                src={bImg.url || bImg.landscapeUrl || bImg.portraitUrl} 
+                alt={`Background ${index + 1}`} 
+                className={`w-full h-full object-cover ${
+                  bImg.verticalAlign === 'top' 
+                    ? 'object-top' 
+                    : bImg.verticalAlign === 'bottom' 
+                      ? 'object-bottom' 
+                      : 'object-center'
+                }`} 
+              />
+            </picture>
             <div className="absolute inset-0 bg-black/20 mix-blend-multiply"></div>
           </div>
         ))
@@ -179,9 +201,9 @@ const HeroSection: React.FC<SectionRendererProps> = ({ section }) => {
       </div>
 
       {/* Dots Indicator (only if multiple images) */}
-      {images.length > 1 && (
+      {bannerImages.length > 1 && (
         <div className="absolute bottom-8 z-20 flex space-x-2">
-          {images.map((_, idx) => (
+          {bannerImages.map((_, idx) => (
             <div 
               key={idx} 
               className={`w-2 h-2 rounded-full transition-all ${idx === currentIndex ? 'bg-white w-4' : 'bg-white/50'}`}

@@ -236,7 +236,12 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                   </div>
 
                   <div className="flex items-center gap-0.5 xl:gap-1 ml-1 xl:ml-2">
-                    <Link to={isAuthenticated ? "/admin" : "/guest-settings"} className="text-wedding-400 hover:text-wedding-600 p-1.5 transition-colors" title="Configurações">
+                    <Link 
+                      to={isAuthenticated ? "/admin" : "/guest-settings"} 
+                      className="text-wedding-400 hover:text-wedding-600 p-1.5 transition-colors" 
+                      title="Configurações"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                    >
                       <Settings size={16} />
                     </Link>
                     <button 
@@ -281,7 +286,11 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 </div>
               )}
               
-               <Link to={isAuthenticated ? "/admin" : "/guest-settings"} className="text-wedding-400 hover:text-wedding-600 p-2">
+               <Link 
+                 to={isAuthenticated ? "/admin" : "/guest-settings"} 
+                 className="text-wedding-400 hover:text-wedding-600 p-2"
+                 onClick={() => setIsMobileMenuOpen(false)}
+               >
                 <Settings size={18} />
               </Link>
               {(isAuthenticated || currentGuest) && (

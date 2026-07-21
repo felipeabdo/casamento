@@ -1,12 +1,16 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../store';
 import { useNavigate } from 'react-router-dom';
-import { Trash2, Plus, Edit2, Wand2, Loader2, Save, LogOut, Eye, EyeOff, Image as ImageIcon, CheckCircle, Video, Mic, Clock, X, MessageCircle } from 'lucide-react';
+import { Trash2, Plus, Edit2, Wand2, Loader2, Save, LogOut, Eye, EyeOff, Image as ImageIcon, CheckCircle, Video, Mic, Clock, X, MessageCircle, Upload, Crop, Monitor, Smartphone } from 'lucide-react';
 import { generatePageContent } from '../services/geminiService';
-import { Gift, Page, Section, Contribution } from '../types';
+import { Gift, Page, Section, Contribution, BannerImage } from '../types';
 import { Modal } from '../components/Modal';
 import { Country, State, City } from 'country-state-city';
 import { AsYouType, getCountryCallingCode } from 'libphonenumber-js';
+import { storage } from '../firebaseConfig';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import imageCompression from 'browser-image-compression';
+import { BannerCropModal } from '../components/BannerCropModal';
 
 export const AdminPage: React.FC = () => {
   const { 
@@ -105,6 +109,13 @@ export const AdminPage: React.FC = () => {
   const [homeLocation, setHomeLocation] = useState<Partial<Section>>({});
   const [newHeroImageUrl, setNewHeroImageUrl] = useState('');
 
+  // States for Banner Upload and Crop
+  const [isBannerCropModalOpen, setIsBannerCropModalOpen] = useState(false);
+  const [cropModalImageFile, setCropModalImageFile] = useState<File | null>(null);
+  const [cropModalImageUrl, setCropModalImageUrl] = useState<string | null>(null);
+  const [currentCroppingIndex, setCurrentCroppingIndex] = useState<number | null>(null);
+  const [isBannerUploading, setIsBannerUploading] = useState(false);
+
   // State for Confirmation Modal
   const [confirmModal, setConfirmModal] = useState<{isOpen: boolean, message: string, onConfirm: () => void}>({
     isOpen: false,
@@ -130,6 +141,14 @@ export const AdminPage: React.FC = () => {
             } else {
                 loadedHero.imageUrls = [];
             }
+        }
+        if (!loadedHero.bannerImages) {
+            loadedHero.bannerImages = loadedHero.imageUrls.map((url, i) => ({
+                id: `legacy-${i}-${Date.now()}`,
+                url: url,
+                landscapeUrl: url,
+                portraitUrl: url
+            }));
         }
         setHomeHero(loadedHero);
     }
@@ -592,9 +611,17 @@ export const AdminPage: React.FC = () => {
   const addHeroImage = () => {
       if (newHeroImageUrl) {
           const currentImages = homeHero.imageUrls || [];
+          const currentBannerImages = homeHero.bannerImages || [];
+          const newBannerImg: BannerImage = {
+              id: `banner-url-${Date.now()}`,
+              url: newHeroImageUrl,
+              landscapeUrl: newHeroImageUrl,
+              portraitUrl: newHeroImageUrl
+          };
           setHomeHero({
               ...homeHero,
               imageUrls: [...currentImages, newHeroImageUrl],
+              bannerImages: [...currentBannerImages, newBannerImg],
               imageUrl: newHeroImageUrl 
           });
           setNewHeroImageUrl('');
@@ -603,12 +630,160 @@ export const AdminPage: React.FC = () => {
 
   const removeHeroImage = (index: number) => {
       const currentImages = homeHero.imageUrls || [];
+      const currentBannerImages = homeHero.bannerImages || [];
       const newImages = currentImages.filter((_, i) => i !== index);
+      const newBannerImages = currentBannerImages.filter((_, i) => i !== index);
       setHomeHero({
           ...homeHero,
           imageUrls: newImages,
+          bannerImages: newBannerImages,
           imageUrl: newImages.length > 0 ? newImages[0] : '' 
       });
+  };
+
+  const handleBannerFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setCropModalImageFile(file);
+      setCropModalImageUrl(null);
+      setCurrentCroppingIndex(null);
+      setIsBannerCropModalOpen(true);
+      e.target.value = '';
+    }
+  };
+
+  const handleEditExistingBannerCrop = (idx: number) => {
+    const bannerImg = homeHero.bannerImages?.[idx];
+    if (bannerImg) {
+      setCropModalImageUrl(bannerImg.url || bannerImg.landscapeUrl || bannerImg.portraitUrl || null);
+      setCropModalImageFile(null);
+      setCurrentCroppingIndex(idx);
+      setIsBannerCropModalOpen(true);
+    }
+  };
+
+  const handleBannerCropSave = async (
+    landscapeBlob: Blob, 
+    portraitBlob: Blob,
+    cropState: {
+      landscape: { x: number; y: number; zoom: number };
+      portrait: { x: number; y: number; zoom: number };
+    }
+  ) => {
+    try {
+      setIsBannerUploading(true);
+      setIsBannerCropModalOpen(false);
+
+      const timestamp = Date.now();
+      const filenameLandscape = `banners/landscape_${timestamp}.webp`;
+      const filenamePortrait = `banners/portrait_${timestamp}.webp`;
+
+      const CLOUDINARY_CLOUD_NAME = "dp1qpjvdf".trim();
+      const CLOUDINARY_UPLOAD_PRESET = "casamento_upload".trim();
+
+      const uploadWithFallback = async (blob: Blob, firebasePath: string, cloudinaryFileName: string): Promise<string> => {
+        try {
+          // First attempt: Firebase Storage
+          const storageRef = ref(storage, firebasePath);
+          await uploadBytes(storageRef, blob);
+          return await getDownloadURL(storageRef);
+        } catch (fbError: any) {
+          console.warn("Firebase Storage upload failed (likely quota exceeded). Falling back to Cloudinary:", fbError);
+          
+          const formData = new FormData();
+          formData.append('file', blob);
+          formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+          formData.append('public_id', cloudinaryFileName);
+          formData.append('folder', 'banners');
+
+          const response = await fetch(
+            `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
+            {
+              method: 'POST',
+              body: formData,
+            }
+          );
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error?.message || 'Erro ao fazer upload no Cloudinary de fallback.');
+          }
+
+          const data = await response.json();
+          return data.secure_url;
+        }
+      };
+
+      // Upload landscape version
+      const landscapeUrl = await uploadWithFallback(landscapeBlob, filenameLandscape, `landscape_${timestamp}`);
+
+      // Upload portrait version
+      const portraitUrl = await uploadWithFallback(portraitBlob, filenamePortrait, `portrait_${timestamp}`);
+
+      let originalUrl = landscapeUrl;
+      if (cropModalImageFile) {
+        const filenameOriginal = `banners/original_${timestamp}.webp`;
+        const options = {
+          maxSizeMB: 1,
+          maxWidthOrHeight: 1920,
+          useWebWorker: true,
+          fileType: 'image/webp'
+        };
+        const compressedOriginal = await imageCompression(cropModalImageFile, options);
+        originalUrl = await uploadWithFallback(compressedOriginal, filenameOriginal, `original_${timestamp}`);
+      } else if (cropModalImageUrl) {
+        originalUrl = cropModalImageUrl;
+      }
+
+      const newBannerImage: BannerImage = {
+        id: `banner-${timestamp}`,
+        url: originalUrl,
+        landscapeUrl,
+        portraitUrl,
+        cropState,
+      };
+
+      const currentBannerImages = homeHero.bannerImages || [];
+      const currentImageUrls = homeHero.imageUrls || [];
+
+      if (currentCroppingIndex !== null) {
+        const updatedBannerImages = [...currentBannerImages];
+        updatedBannerImages[currentCroppingIndex] = {
+          ...updatedBannerImages[currentCroppingIndex],
+          landscapeUrl,
+          portraitUrl,
+          url: originalUrl,
+          cropState,
+        };
+
+        const updatedImageUrls = [...currentImageUrls];
+        updatedImageUrls[currentCroppingIndex] = landscapeUrl;
+
+        setHomeHero({
+          ...homeHero,
+          bannerImages: updatedBannerImages,
+          imageUrls: updatedImageUrls,
+          imageUrl: updatedImageUrls.length > 0 ? updatedImageUrls[0] : '',
+        });
+      } else {
+        setHomeHero({
+          ...homeHero,
+          bannerImages: [...currentBannerImages, newBannerImage],
+          imageUrls: [...currentImageUrls, landscapeUrl],
+          imageUrl: landscapeUrl,
+        });
+      }
+
+      alert('Foto do banner processada e salva temporariamente! Clique em "Salvar Capa" para persistir as alterações.');
+    } catch (error) {
+      console.error('Error saving cropped banner images:', error);
+      alert('Erro ao fazer upload dos recortes da imagem do banner.');
+    } finally {
+      setIsBannerUploading(false);
+      setCropModalImageFile(null);
+      setCropModalImageUrl(null);
+      setCurrentCroppingIndex(null);
+    }
   };
 
   const handleUpdateHomeHero = () => {
@@ -642,6 +817,320 @@ export const AdminPage: React.FC = () => {
         updatePage('home', { sections: updatedSections });
         alert('Seção "Local da Festa" atualizada com sucesso!');
     }
+  };
+
+  // --- PRE-WEDDING PHOTO & VIDEO UPLOAD ACTIONS & STATES ---
+  const [preWeddingVideoUploadProgress, setPreWeddingVideoUploadProgress] = useState(0);
+  const [isUploadingPreWeddingVideo, setIsUploadingPreWeddingVideo] = useState(false);
+  const [preWeddingPhotosUploadProgress, setPreWeddingPhotosUploadProgress] = useState(0);
+  const [isUploadingPreWeddingPhotos, setIsUploadingPreWeddingPhotos] = useState(false);
+  const [preWeddingVideoUrlInput, setPreWeddingVideoUrlInput] = useState('');
+  const [preWeddingVideoSourceType, setPreWeddingVideoSourceType] = useState<'file' | 'url'>('url');
+
+  const preWeddingPage = pages.find(p => p.id === 'pre-wedding-page');
+
+  const uploadMediaWithFallback = async (
+    blob: Blob, 
+    firebasePath: string, 
+    cloudinaryFileName: string, 
+    resourceType: 'image' | 'video'
+  ): Promise<{ url: string; firebasePath?: string; cloudinaryPublicId?: string }> => {
+    const CLOUDINARY_CLOUD_NAME = "dp1qpjvdf".trim();
+    const CLOUDINARY_UPLOAD_PRESET = "casamento_upload".trim();
+
+    try {
+      // 1. Try Firebase Storage first
+      const storageRef = ref(storage, firebasePath);
+      await uploadBytes(storageRef, blob);
+      const url = await getDownloadURL(storageRef);
+      return { url, firebasePath };
+    } catch (fbError: any) {
+      console.warn("Firebase Storage upload failed, falling back to Cloudinary:", fbError);
+      // 2. Fallback to Cloudinary
+      const formData = new FormData();
+      formData.append('file', blob);
+      formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+      formData.append('public_id', cloudinaryFileName);
+      formData.append('folder', 'pre-wedding');
+
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/${resourceType}/upload`,
+        {
+          method: 'POST',
+          body: formData,
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || 'Erro ao enviar arquivo para o Cloudinary de fallback.');
+      }
+
+      const data = await response.json();
+      return { 
+        url: data.secure_url, 
+        cloudinaryPublicId: data.public_id 
+      };
+    }
+  };
+
+  const handleUploadPreWeddingPhotos = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0 || !preWeddingPage) return;
+
+    try {
+      setIsUploadingPreWeddingPhotos(true);
+      setPreWeddingPhotosUploadProgress(0);
+
+      const uploadedPhotosList = [...(preWeddingPage.preWeddingPhotos || [])];
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        
+        // Compress image first
+        const options = {
+          maxSizeMB: 1,
+          maxWidthOrHeight: 1920,
+          useWebWorker: true,
+          fileType: 'image/webp'
+        };
+        const compressedFile = await imageCompression(file, options);
+
+        const timestamp = Date.now();
+        const firebasePath = `pre-wedding/photo_${timestamp}_${i}.webp`;
+        const cloudinaryFileName = `photo_${timestamp}_${i}`;
+
+        const result = await uploadMediaWithFallback(
+          compressedFile, 
+          firebasePath, 
+          cloudinaryFileName, 
+          'image'
+        );
+
+        uploadedPhotosList.push({
+          url: result.url,
+          firebasePath: result.firebasePath,
+          cloudinaryPublicId: result.cloudinaryPublicId
+        });
+
+        setPreWeddingPhotosUploadProgress(Math.round(((i + 1) / files.length) * 100));
+      }
+
+      await updatePage('pre-wedding-page', {
+        ...preWeddingPage,
+        preWeddingPhotos: uploadedPhotosList
+      });
+
+      alert('Fotos do pré-wedding enviadas com sucesso!');
+    } catch (error: any) {
+      console.error('Error uploading pre-wedding photos:', error);
+      alert('Erro ao enviar fotos: ' + error.message);
+    } finally {
+      setIsUploadingPreWeddingPhotos(false);
+      setPreWeddingPhotosUploadProgress(0);
+      if (e.target) e.target.value = '';
+    }
+  };
+
+  const handleDeletePreWeddingPhoto = async (index: number) => {
+    if (!preWeddingPage || !preWeddingPage.preWeddingPhotos) return;
+
+    const photoToDelete = preWeddingPage.preWeddingPhotos[index];
+    
+    setConfirmModal({
+      isOpen: true,
+      message: 'Excluir esta foto do pré-wedding permanentemente?',
+      onConfirm: async () => {
+        try {
+          // Delete from storage
+          if (photoToDelete.firebasePath) {
+            try {
+              const storageRef = ref(storage, photoToDelete.firebasePath);
+              await deleteObject(storageRef);
+            } catch (err) {
+              console.error('Failed to delete photo from Firebase Storage:', err);
+            }
+          }
+
+          if (photoToDelete.cloudinaryPublicId) {
+            try {
+              await fetch('/api/storage/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ publicId: photoToDelete.cloudinaryPublicId, resourceType: 'image' })
+              });
+            } catch (err) {
+              console.error('Failed to delete photo from Cloudinary:', err);
+            }
+          }
+
+          const updatedPhotos = preWeddingPage.preWeddingPhotos!.filter((_, i) => i !== index);
+          await updatePage('pre-wedding-page', {
+            ...preWeddingPage,
+            preWeddingPhotos: updatedPhotos
+          });
+
+          alert('Foto excluída com sucesso!');
+        } catch (error: any) {
+          console.error('Error deleting pre-wedding photo:', error);
+          alert('Erro ao excluir foto: ' + error.message);
+        }
+      }
+    });
+  };
+
+  const handleUploadPreWeddingVideoFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !preWeddingPage) return;
+
+    try {
+      setIsUploadingPreWeddingVideo(true);
+      setPreWeddingVideoUploadProgress(10);
+
+      const timestamp = Date.now();
+      const firebasePath = `pre-wedding/video_${timestamp}.mp4`;
+      const cloudinaryFileName = `video_${timestamp}`;
+
+      setPreWeddingVideoUploadProgress(30);
+
+      const result = await uploadMediaWithFallback(
+        file, 
+        firebasePath, 
+        cloudinaryFileName, 
+        'video'
+      );
+
+      setPreWeddingVideoUploadProgress(80);
+
+      // Delete old video files if they exist
+      const oldVideo = preWeddingPage.preWeddingVideo;
+      if (oldVideo) {
+        if (oldVideo.firebasePath) {
+          try {
+            await deleteObject(ref(storage, oldVideo.firebasePath));
+          } catch (e) {
+            console.error('Error deleting old video file from Firebase:', e);
+          }
+        }
+        if (oldVideo.cloudinaryPublicId) {
+          try {
+            await fetch('/api/storage/delete', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ publicId: oldVideo.cloudinaryPublicId, resourceType: 'video' })
+            });
+          } catch (e) {
+            console.error('Error deleting old video file from Cloudinary:', e);
+          }
+        }
+      }
+
+      await updatePage('pre-wedding-page', {
+        ...preWeddingPage,
+        preWeddingVideo: {
+          url: result.url,
+          type: 'file',
+          firebasePath: result.firebasePath,
+          cloudinaryPublicId: result.cloudinaryPublicId
+        }
+      });
+
+      setPreWeddingVideoUploadProgress(100);
+      alert('Vídeo do pré-wedding enviado com sucesso!');
+    } catch (error: any) {
+      console.error('Error uploading pre-wedding video:', error);
+      alert('Erro ao enviar vídeo: ' + error.message);
+    } finally {
+      setIsUploadingPreWeddingVideo(false);
+      setPreWeddingVideoUploadProgress(0);
+      if (e.target) e.target.value = '';
+    }
+  };
+
+  const handleSavePreWeddingVideoLink = async () => {
+    if (!preWeddingPage || !preWeddingVideoUrlInput) return;
+
+    try {
+      const oldVideo = preWeddingPage.preWeddingVideo;
+      if (oldVideo) {
+        if (oldVideo.firebasePath) {
+          try {
+            await deleteObject(ref(storage, oldVideo.firebasePath));
+          } catch (e) {
+            console.error('Error deleting old video file from Firebase:', e);
+          }
+        }
+        if (oldVideo.cloudinaryPublicId) {
+          try {
+            await fetch('/api/storage/delete', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ publicId: oldVideo.cloudinaryPublicId, resourceType: 'video' })
+            });
+          } catch (e) {
+            console.error('Error deleting old video file from Cloudinary:', e);
+          }
+        }
+      }
+
+      await updatePage('pre-wedding-page', {
+        ...preWeddingPage,
+        preWeddingVideo: {
+          url: preWeddingVideoUrlInput,
+          type: 'url'
+        }
+      });
+
+      alert('Link do vídeo do pré-wedding salvo com sucesso!');
+      setPreWeddingVideoUrlInput('');
+    } catch (error: any) {
+      console.error('Error saving video link:', error);
+      alert('Erro ao salvar link do vídeo: ' + error.message);
+    }
+  };
+
+  const handleDeletePreWeddingVideo = async () => {
+    if (!preWeddingPage || !preWeddingPage.preWeddingVideo) return;
+
+    const videoToDelete = preWeddingPage.preWeddingVideo;
+
+    setConfirmModal({
+      isOpen: true,
+      message: 'Excluir o vídeo do pré-wedding permanentemente?',
+      onConfirm: async () => {
+        try {
+          if (videoToDelete.firebasePath) {
+            try {
+              const storageRef = ref(storage, videoToDelete.firebasePath);
+              await deleteObject(storageRef);
+            } catch (err) {
+              console.error('Failed to delete video from Firebase Storage:', err);
+            }
+          }
+
+          if (videoToDelete.cloudinaryPublicId) {
+            try {
+              await fetch('/api/storage/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ publicId: videoToDelete.cloudinaryPublicId, resourceType: 'video' })
+              });
+            } catch (err) {
+              console.error('Failed to delete video from Cloudinary:', err);
+            }
+          }
+
+          const updatedPage = { ...preWeddingPage };
+          delete updatedPage.preWeddingVideo;
+
+          await updatePage('pre-wedding-page', updatedPage);
+          alert('Vídeo excluído com sucesso!');
+        } catch (error: any) {
+          console.error('Error deleting pre-wedding video:', error);
+          alert('Erro ao excluir vídeo: ' + error.message);
+        }
+      }
+    });
   };
 
   const updatePageVisibilityConfig = (page: any, role: 'public' | 'guest' | 'admin', newValue: boolean) => {
@@ -953,28 +1442,166 @@ export const AdminPage: React.FC = () => {
                     </div>
                     <div className="pt-2">
                          <label className="block text-sm font-bold text-wedding-700 mb-2">Fotos do Banner (Carrossel)</label>
-                         <div className="space-y-2 mb-3">
-                             {homeHero.imageUrls && homeHero.imageUrls.map((url, idx) => (
-                                 <div key={idx} className="flex gap-2 items-center bg-wedding-100 p-2 rounded border border-wedding-200">
-                                     <img src={url} alt="Miniatura" className="w-10 h-10 object-cover rounded" />
-                                     <span className="text-xs text-wedding-700 truncate flex-1">{url}</span>
-                                     <button onClick={() => removeHeroImage(idx)} className="text-red-500 hover:text-red-700 p-1">
-                                         <Trash2 size={16} />
+                         
+                         {/* Banner Images List */}
+                         <div className="space-y-3 mb-4">
+                             {homeHero.bannerImages && homeHero.bannerImages.length > 0 ? (
+                                 homeHero.bannerImages.map((bImg, idx) => (
+                                     <div key={bImg.id || idx} className="bg-white p-3 rounded-xl border border-wedding-200 shadow-sm flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
+                                         {/* Preview Thumbnails */}
+                                         <div className="flex items-center gap-4 flex-1 min-w-0">
+                                             <div className="flex gap-2 items-center bg-gray-50 p-1.5 rounded-lg border border-gray-100 shrink-0">
+                                                 {/* Landscape Preview */}
+                                                 <div className="text-center">
+                                                     <span className="text-[10px] text-gray-400 block mb-1 font-semibold uppercase">Deitado</span>
+                                                     <img 
+                                                         src={bImg.landscapeUrl || bImg.url} 
+                                                         alt="Desktop Banner" 
+                                                         className={`w-16 h-10 object-cover rounded border border-gray-200 ${
+                                                             bImg.verticalAlign === 'top' ? 'object-top' : bImg.verticalAlign === 'bottom' ? 'object-bottom' : 'object-center'
+                                                         }`} 
+                                                     />
+                                                 </div>
+                                                 {/* Portrait Preview */}
+                                                 <div className="text-center">
+                                                     <span className="text-[10px] text-gray-400 block mb-1 font-semibold uppercase">Em pé</span>
+                                                     <img 
+                                                         src={bImg.portraitUrl || bImg.url} 
+                                                         alt="Mobile Banner" 
+                                                         className={`w-8 h-10 object-cover rounded border border-gray-200 ${
+                                                             bImg.verticalAlign === 'top' ? 'object-top' : bImg.verticalAlign === 'bottom' ? 'object-bottom' : 'object-center'
+                                                         }`} 
+                                                     />
+                                                 </div>
+                                             </div>
+                                             
+                                             <div className="truncate flex-grow">
+                                                 <p className="text-xs font-semibold text-wedding-800 truncate mb-0.5">Imagem {idx + 1}</p>
+                                                 <span className="text-[10px] text-gray-400 font-mono block truncate mb-2" title={bImg.url}>{bImg.url}</span>
+                                                 
+                                                 {/* Vertical Alignment Selector */}
+                                                 <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 mt-1">
+                                                     <span className="text-[9px] text-wedding-600 font-bold uppercase tracking-wider">Alinhamento vertical:</span>
+                                                     <div className="inline-flex bg-wedding-50 p-0.5 rounded-md border border-wedding-100 w-fit">
+                                                         <button
+                                                             type="button"
+                                                             onClick={() => {
+                                                                 const updated = [...(homeHero.bannerImages || [])];
+                                                                 updated[idx] = { ...updated[idx], verticalAlign: 'top' };
+                                                                 setHomeHero({ ...homeHero, bannerImages: updated });
+                                                             }}
+                                                             className={`px-2 py-0.5 text-[10px] font-semibold rounded transition-all ${
+                                                                 bImg.verticalAlign === 'top' 
+                                                                     ? 'bg-wedding-800 text-white shadow-sm' 
+                                                                     : 'text-wedding-700 hover:bg-wedding-100'
+                                                             }`}
+                                                         >
+                                                             Topo
+                                                         </button>
+                                                         <button
+                                                             type="button"
+                                                             onClick={() => {
+                                                                 const updated = [...(homeHero.bannerImages || [])];
+                                                                 updated[idx] = { ...updated[idx], verticalAlign: 'center' };
+                                                                 setHomeHero({ ...homeHero, bannerImages: updated });
+                                                             }}
+                                                             className={`px-2 py-0.5 text-[10px] font-semibold rounded transition-all ${
+                                                                 (!bImg.verticalAlign || bImg.verticalAlign === 'center') 
+                                                                     ? 'bg-wedding-800 text-white shadow-sm' 
+                                                                     : 'text-wedding-700 hover:bg-wedding-100'
+                                                             }`}
+                                                         >
+                                                             Centro
+                                                         </button>
+                                                         <button
+                                                             type="button"
+                                                             onClick={() => {
+                                                                 const updated = [...(homeHero.bannerImages || [])];
+                                                                 updated[idx] = { ...updated[idx], verticalAlign: 'bottom' };
+                                                                 setHomeHero({ ...homeHero, bannerImages: updated });
+                                                             }}
+                                                             className={`px-2 py-0.5 text-[10px] font-semibold rounded transition-all ${
+                                                                 bImg.verticalAlign === 'bottom' 
+                                                                     ? 'bg-wedding-800 text-white shadow-sm' 
+                                                                     : 'text-wedding-700 hover:bg-wedding-100'
+                                                             }`}
+                                                         >
+                                                             Base
+                                                         </button>
+                                                     </div>
+                                                 </div>
+                                             </div>
+                                         </div>
+                                         
+                                         {/* Action Buttons for this item */}
+                                         <div className="flex gap-2 shrink-0 w-full md:w-auto justify-end">
+                                             <button 
+                                                 type="button"
+                                                 onClick={() => handleEditExistingBannerCrop(idx)}
+                                                 className="flex items-center gap-1.5 px-3 py-1.5 bg-wedding-50 text-wedding-800 hover:bg-wedding-100 rounded-lg text-xs font-semibold transition-colors border border-wedding-200"
+                                             >
+                                                 <Crop size={14} /> Recortar / Ajustar
+                                             </button>
+                                             <button 
+                                                 type="button"
+                                                 onClick={() => removeHeroImage(idx)}
+                                                 className="flex items-center justify-center p-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors border border-red-100"
+                                                 title="Remover foto"
+                                             >
+                                                 <Trash2 size={16} />
+                                             </button>
+                                         </div>
+                                     </div>
+                                 ))
+                             ) : (
+                                 <div className="text-center py-6 border border-dashed border-wedding-200 bg-wedding-50/20 rounded-xl text-wedding-600 italic text-sm">
+                                     Nenhuma imagem no carrossel. Adicione uma abaixo.
+                                 </div>
+                             )}
+                         </div>
+
+                         {/* Upload and URL controls */}
+                         <div className="space-y-3 p-4 bg-wedding-50/30 rounded-xl border border-wedding-100">
+                             <span className="text-xs font-bold text-wedding-800 block">Adicionar Nova Foto ao Banner:</span>
+                             
+                             <div className="flex flex-col md:flex-row gap-3">
+                                 {/* Direct File Upload button */}
+                                 <div className="flex-1">
+                                     <label className="flex items-center justify-center gap-2 px-4 py-2 bg-wedding-100 hover:bg-wedding-200 text-wedding-800 rounded-lg cursor-pointer transition-colors border border-wedding-300 font-semibold text-sm w-full h-full text-center min-h-[42px]">
+                                         <Upload size={16} />
+                                         {isBannerUploading ? 'Carregando...' : 'Escolher Arquivo do Computador'}
+                                         <input 
+                                             type="file" 
+                                             accept="image/*" 
+                                             onChange={handleBannerFileChange} 
+                                             disabled={isBannerUploading}
+                                             className="hidden" 
+                                         />
+                                     </label>
+                                 </div>
+                                 
+                                 {/* Manual URL Input */}
+                                 <div className="flex-[1.5] flex gap-2">
+                                     <input 
+                                         type="text"
+                                         placeholder="Ou cole o link/URL de uma foto aqui"
+                                         value={newHeroImageUrl}
+                                         onChange={(e) => setNewHeroImageUrl(e.target.value)}
+                                         className={inputClass}
+                                     />
+                                     <button 
+                                         type="button"
+                                         onClick={addHeroImage} 
+                                         className="bg-wedding-600 hover:bg-wedding-700 text-white px-4 rounded-lg flex items-center justify-center transition-colors shadow-sm"
+                                     >
+                                         <Plus size={18} />
                                      </button>
                                  </div>
-                             ))}
-                         </div>
-                         <div className="flex gap-2">
-                             <input 
-                                type="text"
-                                placeholder="URL da nova imagem"
-                                value={newHeroImageUrl}
-                                onChange={(e) => setNewHeroImageUrl(e.target.value)}
-                                className={inputClass}
-                             />
-                             <button onClick={addHeroImage} className="bg-wedding-600 text-white px-3 rounded hover:bg-wedding-700 flex items-center">
-                                 <Plus size={18} />
-                             </button>
+                             </div>
+                             
+                             <p className="text-[10px] text-gray-500 italic">
+                                 * Fazer upload direto do seu arquivo abrirá a ferramenta de recorte para ajustar os tamanhos para computador e celular automaticamente.
+                             </p>
                          </div>
                     </div>
                     <div className="flex justify-end pt-4">
@@ -1652,6 +2279,181 @@ export const AdminPage: React.FC = () => {
                     </div>
                 )}
               </div>
+
+              {/* SEÇÃO PRÉ-WEDDING */}
+              <div className="bg-wedding-50 p-6 rounded border border-wedding-200 mt-8">
+                <h3 className="text-xl font-serif text-wedding-800 mb-6 border-b border-wedding-200 pb-2 flex items-center gap-2">
+                  <ImageIcon size={20} /> Fotos e Vídeo do Pré-Wedding
+                </h3>
+                
+                {/* 1. VÍDEO DO PRÉ-WEDDING */}
+                <div className="bg-white p-5 rounded border border-wedding-200 mb-8">
+                  <h4 className="font-bold text-wedding-800 mb-4 flex items-center gap-2">
+                    <Video size={18} /> Vídeo de Pré-Wedding
+                  </h4>
+                  <p className="text-xs text-wedding-600 mb-4">
+                    Adicione um vídeo de destaque do ensaio pré-wedding. Ele aparecerá no início da página pré-wedding e será reproduzível pelos convidados.
+                  </p>
+                  
+                  {preWeddingPage?.preWeddingVideo ? (
+                    <div className="bg-wedding-50 p-4 rounded border border-wedding-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <span className="text-xs font-semibold px-2 py-1 rounded bg-wedding-200 text-wedding-800 mr-2 uppercase">
+                          {preWeddingPage.preWeddingVideo.type === 'file' ? 'Arquivo Local' : 'Link Web'}
+                        </span>
+                        <a 
+                          href={preWeddingPage.preWeddingVideo.url} 
+                          target="_blank" 
+                          rel="noreferrer" 
+                          className="text-sm text-wedding-600 hover:underline break-all"
+                        >
+                          {preWeddingPage.preWeddingVideo.url}
+                        </a>
+                      </div>
+                      <button
+                        onClick={handleDeletePreWeddingVideo}
+                        className="bg-red-500 text-white hover:bg-red-600 px-3 py-1.5 rounded text-sm flex items-center gap-1.5 self-start md:self-auto shrink-0 transition-colors"
+                      >
+                        <Trash2 size={14} /> Remover Vídeo
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="flex gap-4 border-b border-wedding-100 pb-2">
+                        <button
+                          type="button"
+                          onClick={() => setPreWeddingVideoSourceType('url')}
+                          className={`text-sm pb-1 border-b-2 font-medium ${preWeddingVideoSourceType === 'url' ? 'border-wedding-800 text-wedding-800' : 'border-transparent text-wedding-400'}`}
+                        >
+                          Colar Link (YouTube, Vimeo, Drive, etc.)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPreWeddingVideoSourceType('file')}
+                          className={`text-sm pb-1 border-b-2 font-medium ${preWeddingVideoSourceType === 'file' ? 'border-wedding-800 text-wedding-800' : 'border-transparent text-wedding-400'}`}
+                        >
+                          Subir Arquivo de Vídeo
+                        </button>
+                      </div>
+
+                      {preWeddingVideoSourceType === 'url' ? (
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <input
+                            type="text"
+                            placeholder="Ex: https://www.youtube.com/watch?v=..."
+                            value={preWeddingVideoUrlInput}
+                            onChange={(e) => setPreWeddingVideoUrlInput(e.target.value)}
+                            className="flex-1 border border-wedding-200 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-wedding-800 text-wedding-900"
+                          />
+                          <button
+                            onClick={handleSavePreWeddingVideoLink}
+                            disabled={!preWeddingVideoUrlInput}
+                            className="bg-wedding-800 text-white hover:bg-wedding-700 px-4 py-2 rounded text-sm font-serif transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Salvar Link
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-center border-2 border-dashed border-wedding-200 rounded-lg p-6 bg-wedding-50">
+                            {isUploadingPreWeddingVideo ? (
+                              <div className="text-center">
+                                <Loader2 className="animate-spin text-wedding-800 mx-auto mb-2" size={24} />
+                                <p className="text-sm text-wedding-800 font-medium">Enviando vídeo ({preWeddingVideoUploadProgress}%)</p>
+                                <div className="w-48 bg-wedding-200 rounded-full h-2 mt-2 mx-auto overflow-hidden">
+                                  <div className="bg-wedding-800 h-2 rounded-full transition-all duration-300" style={{ width: `${preWeddingVideoUploadProgress}%` }}></div>
+                                </div>
+                              </div>
+                            ) : (
+                              <label className="cursor-pointer text-center">
+                                <Video className="mx-auto text-wedding-400 mb-2" size={32} />
+                                <span className="text-sm font-semibold text-wedding-800 block hover:underline">Selecione um arquivo de vídeo</span>
+                                <span className="text-xs text-wedding-500 block mt-1">Formatos sugeridos: .mp4, .mov, .webm</span>
+                                <input
+                                  type="file"
+                                  accept="video/*"
+                                  onChange={handleUploadPreWeddingVideoFile}
+                                  className="hidden"
+                                />
+                              </label>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* 2. FOTOS DO PRÉ-WEDDING */}
+                <div className="bg-white p-5 rounded border border-wedding-200">
+                  <h4 className="font-bold text-wedding-800 mb-4 flex items-center gap-2">
+                    <ImageIcon size={18} /> Fotos do Ensaio
+                  </h4>
+                  
+                  <div className="mb-6">
+                    {isUploadingPreWeddingPhotos ? (
+                      <div className="bg-wedding-50 p-6 rounded-lg border border-dashed border-wedding-300 text-center">
+                        <Loader2 className="animate-spin text-wedding-800 mx-auto mb-2" size={24} />
+                        <p className="text-sm text-wedding-800 font-semibold">Enviando e comprimindo fotos ({preWeddingPhotosUploadProgress}%)</p>
+                        <div className="w-64 bg-wedding-200 rounded-full h-2.5 mt-2 mx-auto overflow-hidden">
+                          <div className="bg-wedding-800 h-2.5 rounded-full transition-all duration-300" style={{ width: `${preWeddingPhotosUploadProgress}%` }}></div>
+                        </div>
+                      </div>
+                    ) : (
+                      <label className="flex flex-col items-center justify-center border-2 border-dashed border-wedding-200 rounded-lg p-8 bg-wedding-50 hover:bg-wedding-100 cursor-pointer transition-colors">
+                        <Upload className="text-wedding-400 mb-2" size={32} />
+                        <span className="text-sm font-bold text-wedding-800 block">Enviar Fotos do Pré-Wedding</span>
+                        <span className="text-xs text-wedding-500 mt-1 block text-center max-w-md">
+                          Você pode selecionar múltiplos arquivos simultaneamente. As imagens serão comprimidas automaticamente para melhor carregamento.
+                        </span>
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/*"
+                          onChange={handleUploadPreWeddingPhotos}
+                          className="hidden"
+                        />
+                      </label>
+                    )}
+                  </div>
+
+                  {/* GRID DE FOTOS */}
+                  {!preWeddingPage?.preWeddingPhotos || preWeddingPage.preWeddingPhotos.length === 0 ? (
+                    <div className="text-center py-8 bg-gray-50 rounded border border-dashed border-wedding-100">
+                      <p className="text-sm text-wedding-500 italic">Nenhuma foto de pré-wedding carregada ainda.</p>
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-xs text-wedding-500 mb-3 font-semibold">
+                        {preWeddingPage.preWeddingPhotos.length} {preWeddingPage.preWeddingPhotos.length === 1 ? 'foto carregada' : 'fotos carregadas'}
+                      </p>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                        {preWeddingPage.preWeddingPhotos.map((photo, index) => (
+                          <div key={index} className="aspect-square rounded border border-wedding-200 overflow-hidden relative group bg-gray-50">
+                            <img 
+                              src={photo.url} 
+                              alt={`Pré-wedding ${index + 1}`} 
+                              className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" 
+                            />
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <button
+                                onClick={() => handleDeletePreWeddingPhoto(index)}
+                                className="bg-red-500 text-white p-2 rounded-full hover:bg-red-600 shadow transition-colors"
+                                title="Excluir Foto"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                            <span className="absolute bottom-1 left-1 text-[10px] bg-black/60 text-white px-1.5 py-0.5 rounded font-mono">
+                              #{index + 1}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 
@@ -2068,6 +2870,20 @@ export const AdminPage: React.FC = () => {
           </div>
         </div>
       </Modal>
+
+      <BannerCropModal
+        isOpen={isBannerCropModalOpen}
+        imageFile={cropModalImageFile}
+        imageUrl={cropModalImageUrl}
+        initialCropState={currentCroppingIndex !== null ? homeHero.bannerImages?.[currentCroppingIndex]?.cropState : undefined}
+        onClose={() => {
+          setIsBannerCropModalOpen(false);
+          setCropModalImageFile(null);
+          setCropModalImageUrl(null);
+          setCurrentCroppingIndex(null);
+        }}
+        onSave={handleBannerCropSave}
+      />
     </div>
   );
 };

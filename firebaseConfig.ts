@@ -1,6 +1,6 @@
 // firebaseConfig.ts
 import { initializeApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
+import { initializeFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import { getAuth } from "firebase/auth";
 
@@ -11,7 +11,10 @@ import firebaseConfig from './firebase-applet-config.json';
 const app = initializeApp(firebaseConfig);
 
 // Exporta o banco de dados, storage e auth
-// Respect the named database if firestoreDatabaseId is provided in the config
-export const db = getFirestore(app, (firebaseConfig as any).firestoreDatabaseId || '(default)');
+// Usando initializeFirestore com configurações de long-polling para garantir conexões estáveis em ambientes de sandbox/iframe
+const dbId = (firebaseConfig as any).firestoreDatabaseId || '(default)';
+export const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+}, dbId);
 export const storage = getStorage(app);
 export const auth = getAuth(app);
