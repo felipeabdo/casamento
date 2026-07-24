@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useStore, useTheme } from '../store';
+import { ReactionSystem } from '../components/ReactionSystem';
 import { Upload, X, Maximize2, Minimize2, Image as ImageIcon, Trash2, Camera, Grid, User, Folder, ChevronRight, Plus, AlertCircle } from 'lucide-react';
 import { Photo } from '../types';
 import { storage, auth } from '../firebaseConfig';
@@ -765,11 +766,11 @@ export const Gallery: React.FC = () => {
               className="max-w-full max-h-full object-contain flex-1"
             />
             
-            <div className="absolute top-6 right-6 flex gap-3">
+            <div className="absolute top-6 right-6 flex gap-3 z-20">
               {!isFullscreen && (!currentGuest || selectedPhoto.uploaderId === currentGuest.id) && (
                 <button 
                   onClick={() => setShowDeleteConfirm(true)}
-                  className="p-3 bg-red-600 bg-opacity-80 text-white rounded-full hover:bg-opacity-100 transition-all shadow-lg"
+                  className="p-3 bg-red-600/80 text-white rounded-full hover:bg-red-600 transition-all shadow-lg"
                   title="Solicitar exclusão"
                 >
                   <Trash2 size={24} />
@@ -777,24 +778,28 @@ export const Gallery: React.FC = () => {
               )}
               <button 
                 onClick={toggleFullscreen}
-                className="p-3 bg-white bg-opacity-20 text-white rounded-full hover:bg-opacity-40 transition-all shadow-lg backdrop-blur-md"
+                className="p-3 bg-white/20 text-white rounded-full hover:bg-white/40 transition-all shadow-lg backdrop-blur-md"
                 title={isFullscreen ? "Sair da tela cheia" : "Tela cheia"}
               >
                 {isFullscreen ? <Minimize2 size={24} /> : <Maximize2 size={24} />}
               </button>
+              {/* PROMINENT CLOSE BUTTON */}
               <button 
                 onClick={closeModal}
-                className="p-3 bg-white bg-opacity-20 text-white rounded-full hover:bg-opacity-40 transition-all shadow-lg backdrop-blur-md"
-                title="Fechar"
+                className="p-3 bg-white/20 hover:bg-red-600/80 text-white rounded-full transition-all shadow-lg backdrop-blur-md font-bold"
+                title="Fechar (Esc)"
               >
                 <X size={24} />
               </button>
             </div>
 
-            <div className="absolute bottom-6 left-6 right-6 text-center">
-              <p className="text-white text-lg font-serif bg-black bg-opacity-50 px-6 py-2 rounded-full inline-block backdrop-blur-sm">
+            <div className="absolute bottom-6 left-6 right-6 flex flex-wrap items-center justify-between gap-4 z-10">
+              <p className="text-white text-sm sm:text-base font-serif bg-black/60 px-5 py-2 rounded-full inline-block backdrop-blur-md border border-white/10 shadow-lg">
                 Enviada por <span className="font-bold">{selectedPhoto.uploaderName}</span>
               </p>
+
+              {/* REACTION SYSTEM IN FULLSCREEN MODAL */}
+              <ReactionSystem itemId={`gallery-photo-${selectedPhoto.id}`} theme="dark" />
             </div>
 
             {/* Delete Confirmation Overlay */}
@@ -880,17 +885,23 @@ const PhotoCard: React.FC<{
       }}
       whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.98 }}
-      className="aspect-square rounded-2xl overflow-hidden cursor-pointer group relative shadow-sm hover:shadow-xl transition-all duration-300"
+      className="aspect-square rounded-2xl cursor-pointer group relative shadow-sm hover:shadow-xl transition-all duration-300"
       onClick={onClick}
     >
-      <SmartImage 
-        primaryUrl={photo.url} 
-        fallbackUrl={photo.fallbackUrl}
-        alt={`Foto de ${photo.uploaderName}`} 
-        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-      />
-      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-4">
-        <p className="text-white text-xs font-medium truncate">Enviada por {photo.uploaderName}</p>
+      <div className="w-full h-full rounded-2xl overflow-hidden relative">
+        <SmartImage 
+          primaryUrl={photo.url} 
+          fallbackUrl={photo.fallbackUrl}
+          alt={`Foto de ${photo.uploaderName}`} 
+          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-4 pointer-events-none">
+          <p className="text-white text-xs font-medium truncate mb-6">Enviada por {photo.uploaderName}</p>
+        </div>
+      </div>
+
+      <div className="absolute bottom-3 left-3 z-20" onClick={(e) => e.stopPropagation()}>
+        <ReactionSystem itemId={`gallery-photo-${photo.id}`} compact theme="light" />
       </div>
 
       {isOwner && onDelete && (
