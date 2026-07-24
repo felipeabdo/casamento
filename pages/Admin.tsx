@@ -907,11 +907,13 @@ export const AdminPage: React.FC = () => {
           'image'
         );
 
-        uploadedPhotosList.push({
-          url: result.url,
-          firebasePath: result.firebasePath,
-          cloudinaryPublicId: result.cloudinaryPublicId
-        });
+        const photoObj: { url: string; firebasePath?: string; cloudinaryPublicId?: string } = {
+          url: result.url
+        };
+        if (result.firebasePath) photoObj.firebasePath = result.firebasePath;
+        if (result.cloudinaryPublicId) photoObj.cloudinaryPublicId = result.cloudinaryPublicId;
+
+        uploadedPhotosList.push(photoObj);
 
         setPreWeddingPhotosUploadProgress(Math.round(((i + 1) / files.length) * 100));
       }

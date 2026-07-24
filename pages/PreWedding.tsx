@@ -1,6 +1,346 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../store';
-import { Camera, Heart, ChevronLeft, ChevronRight, X, Download, Play } from 'lucide-react';
+import { 
+  Camera, Heart, ChevronLeft, ChevronRight, X, Download, Play, Pause, 
+  RotateCcw, RotateCw, Volume2, VolumeX, Maximize, Minimize, Settings, 
+  Subtitles, Film, Check, Sparkles, Sliders
+} from 'lucide-react';
+
+interface CustomWeddingPlayerProps {
+  videoUrl: string;
+  posterUrl?: string;
+}
+
+const CustomWeddingPlayer: React.FC<CustomWeddingPlayerProps> = ({ videoUrl, posterUrl }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(1);
+  const [isMuted, setIsMuted] = useState(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [subtitlesEnabled, setSubtitlesEnabled] = useState(false);
+
+  const trimmedUrl = (videoUrl || '').trim();
+  const gdriveMatch = trimmedUrl.match(/(?:drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?.*id=))([a-zA-Z0-9_-]+)/i);
+  const fileId = gdriveMatch ? gdriveMatch[1] : null;
+
+  // Candidate video streams for Google Drive or direct URL
+  const streamCandidates = fileId ? [
+    `https://lh3.googleusercontent.com/d/${fileId}`,
+    `https://drive.google.com/uc?export=download&id=${fileId}`,
+    `https://docs.google.com/uc?export=open&id=${fileId}`
+  ] : [trimmedUrl];
+
+  const [currentSourceIndex, setCurrentSourceIndex] = useState(0);
+  const [streamFailed, setStreamFailed] = useState(false);
+
+  const activeVideoSource = streamCandidates[currentSourceIndex] || trimmedUrl;
+  const driveIframePreview = fileId ? `https://drive.google.com/file/d/${fileId}/preview?autoplay=1` : null;
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  const togglePlay = () => {
+    if (!videoRef.current) return;
+    if (isPlaying) {
+      videoRef.current.pause();
+    } else {
+      videoRef.current.play().catch(() => {});
+    }
+    setIsPlaying(!isPlaying);
+  };
+
+  const skipSeconds = (seconds: number) => {
+    if (!videoRef.current) return;
+    videoRef.current.currentTime = Math.min(
+      Math.max(0, videoRef.current.currentTime + seconds),
+      duration || 9999
+    );
+  };
+
+  const handleTimeUpdate = () => {
+    if (videoRef.current) {
+      setCurrentTime(videoRef.current.currentTime);
+    }
+  };
+
+  const handleLoadedMetadata = () => {
+    if (videoRef.current) {
+      setDuration(videoRef.current.duration);
+    }
+  };
+
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const time = parseFloat(e.target.value);
+    setCurrentTime(time);
+    if (videoRef.current) {
+      videoRef.current.currentTime = time;
+    }
+  };
+
+  const toggleMute = () => {
+    if (!videoRef.current) return;
+    const newMuted = !isMuted;
+    setIsMuted(newMuted);
+    videoRef.current.muted = newMuted;
+  };
+
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newVol = parseFloat(e.target.value);
+    setVolume(newVol);
+    if (videoRef.current) {
+      videoRef.current.volume = newVol;
+      videoRef.current.muted = newVol === 0;
+      setIsMuted(newVol === 0);
+    }
+  };
+
+  const changeSpeed = (speed: number) => {
+    setPlaybackSpeed(speed);
+    if (videoRef.current) {
+      videoRef.current.playbackRate = speed;
+    }
+    setShowSettings(false);
+  };
+
+  const handleVideoError = () => {
+    if (currentSourceIndex < streamCandidates.length - 1) {
+      setCurrentSourceIndex(prev => prev + 1);
+    } else {
+      setStreamFailed(true);
+    }
+  };
+
+  const toggleFullscreen = () => {
+    if (!containerRef.current) return;
+    if (!document.fullscreenElement) {
+      containerRef.current.requestFullscreen().catch((err) => console.error(err));
+    } else {
+      document.exitFullscreen().catch((err) => console.error(err));
+    }
+  };
+
+  const formatTime = (timeInSeconds: number) => {
+    if (isNaN(timeInSeconds) || timeInSeconds === 0) return '00:00';
+    const mins = Math.floor(timeInSeconds / 60);
+    const secs = Math.floor(timeInSeconds % 60);
+    return `${mins < 10 ? '0' : ''}${mins}:${secs < 10 ? '0' : ''}${secs}`;
+  };
+
+  return (
+    <div 
+      ref={containerRef}
+      className="relative w-full rounded-2xl overflow-hidden bg-wedding-950 border border-wedding-300/80 shadow-2xl group text-wedding-50 select-none font-serif"
+    >
+      {/* Player Header Banner inside the Player */}
+      <div className="bg-wedding-900/90 backdrop-blur border-b border-wedding-800/80 px-5 py-3 flex items-center justify-between text-xs text-wedding-100">
+        <div className="flex items-center gap-2">
+          <Film size={18} className="text-wedding-300" />
+          <span className="font-semibold tracking-wider text-wedding-100 uppercase text-xs sm:text-sm">VEJA NOSSO ENSAIO</span>
+        </div>
+
+        <button
+          onClick={toggleFullscreen}
+          className="p-1.5 hover:text-wedding-300 transition-colors flex items-center gap-1.5 text-xs text-wedding-200"
+          title={isFullscreen ? "Sair da Tela Cheia" : "Tela Cheia"}
+        >
+          {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
+          <span className="hidden sm:inline">{isFullscreen ? "Sair da Tela Cheia" : "Tela Cheia"}</span>
+        </button>
+      </div>
+
+      {/* Main Video Viewport */}
+      <div className="aspect-video w-full relative bg-black flex items-center justify-center overflow-hidden">
+        {!streamFailed ? (
+          <video
+            ref={videoRef}
+            src={activeVideoSource}
+            poster={posterUrl}
+            onTimeUpdate={handleTimeUpdate}
+            onLoadedMetadata={handleLoadedMetadata}
+            onEnded={() => setIsPlaying(false)}
+            onError={handleVideoError}
+            onClick={togglePlay}
+            playsInline
+            className="w-full h-full object-contain cursor-pointer"
+          />
+        ) : driveIframePreview ? (
+          /* Fallback Google Drive Frame */
+          <div className="w-full h-full relative">
+            <iframe
+              src={driveIframePreview}
+              title="Nosso Ensaio"
+              className="w-full h-full border-0"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
+              allowFullScreen
+            ></iframe>
+          </div>
+        ) : (
+          <div className="p-8 text-center text-wedding-200">
+            <Play size={44} className="mx-auto mb-3 text-wedding-300" />
+            <p className="font-serif mb-4 text-base">Clique para assistir ao nosso vídeo de ensaio</p>
+            <a 
+              href={trimmedUrl} 
+              target="_blank" 
+              rel="noreferrer"
+              className="bg-wedding-800 text-white font-serif px-6 py-2.5 rounded-full hover:bg-wedding-700 transition-colors inline-flex items-center gap-2 text-sm shadow-lg border border-wedding-600"
+            >
+              <Sparkles size={16} /> Abrir Vídeo
+            </a>
+          </div>
+        )}
+
+        {/* Custom Controls Bar Overlay */}
+        {!streamFailed && (
+          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-wedding-950 via-wedding-950/85 to-transparent p-4 sm:p-5 transition-opacity duration-300 opacity-95 group-hover:opacity-100 z-20">
+            {/* Interactive Progress Seek Bar */}
+            <div className="flex items-center gap-2 mb-3">
+              <input
+                type="range"
+                min={0}
+                max={duration || 100}
+                value={currentTime}
+                onChange={handleSeek}
+                className="w-full h-1.5 bg-wedding-800/80 rounded-lg appearance-none cursor-pointer accent-wedding-300 hover:accent-wedding-100 transition-all"
+              />
+            </div>
+
+            {/* Controls Bar Row */}
+            <div className="flex items-center justify-between flex-wrap gap-3 text-wedding-100 text-sm">
+              <div className="flex items-center gap-2 sm:gap-3">
+                {/* Play / Pause Toggle */}
+                <button
+                  onClick={togglePlay}
+                  className="p-2.5 bg-wedding-800 hover:bg-wedding-700 text-wedding-50 rounded-full transition-all shadow-md hover:scale-105 active:scale-95 border border-wedding-600"
+                  title={isPlaying ? "Pausar" : "Reproduzir"}
+                >
+                  {isPlaying ? <Pause size={18} /> : <Play size={18} className="ml-0.5" />}
+                </button>
+
+                {/* Voltar 10 segundos */}
+                <button
+                  onClick={() => skipSeconds(-10)}
+                  className="p-2 hover:bg-wedding-800/80 bg-wedding-900/70 border border-wedding-800/80 rounded-lg text-wedding-200 hover:text-wedding-50 transition-colors flex items-center gap-1.5 text-xs shadow-sm"
+                  title="Voltar 10 segundos"
+                >
+                  <RotateCcw size={15} />
+                  <span className="font-mono text-xs">-10s</span>
+                </button>
+
+                {/* Avançar 10 segundos */}
+                <button
+                  onClick={() => skipSeconds(10)}
+                  className="p-2 hover:bg-wedding-800/80 bg-wedding-900/70 border border-wedding-800/80 rounded-lg text-wedding-200 hover:text-wedding-50 transition-colors flex items-center gap-1.5 text-xs shadow-sm"
+                  title="Avançar 10 segundos"
+                >
+                  <RotateCw size={15} />
+                  <span className="font-mono text-xs">+10s</span>
+                </button>
+
+                {/* Contador de tempo */}
+                <span className="text-xs font-mono tracking-wider text-wedding-200 bg-wedding-900/90 px-3 py-1.5 rounded-lg border border-wedding-800/90 shadow-inner ml-1">
+                  {formatTime(currentTime)} / {formatTime(duration)}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2 sm:gap-3">
+                {/* Volume & Mute slider */}
+                <div className="flex items-center gap-1.5 bg-wedding-900/80 px-2.5 py-1.5 rounded-lg border border-wedding-800/80 shadow-sm">
+                  <button onClick={toggleMute} className="p-1 hover:text-wedding-300 transition-colors" title="Volume">
+                    {isMuted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                  </button>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={isMuted ? 0 : volume}
+                    onChange={handleVolumeChange}
+                    className="w-14 sm:w-20 h-1 bg-wedding-800 rounded appearance-none cursor-pointer accent-wedding-300"
+                  />
+                </div>
+
+                {/* Legendas Toggle */}
+                <button
+                  onClick={() => setSubtitlesEnabled(!subtitlesEnabled)}
+                  className={`p-2 rounded-lg transition-all ${subtitlesEnabled ? 'text-wedding-300 bg-wedding-800/90 border border-wedding-600 shadow-sm' : 'hover:text-wedding-300 bg-wedding-900/70 border border-wedding-800/80 hover:bg-wedding-800/80'}`}
+                  title="Legendas"
+                >
+                  <Subtitles size={18} />
+                </button>
+
+                {/* Configurações Popover Menu */}
+                <div className="relative">
+                  <button
+                    onClick={() => setShowSettings(!showSettings)}
+                    className="p-2 bg-wedding-900/70 border border-wedding-800/80 hover:bg-wedding-800/80 rounded-lg text-wedding-200 hover:text-wedding-100 transition-colors"
+                    title="Configurações do Player"
+                  >
+                    <Settings size={18} />
+                  </button>
+
+                  {showSettings && (
+                    <div className="absolute right-0 bottom-12 w-56 bg-wedding-900/95 backdrop-blur border border-wedding-700 rounded-xl shadow-2xl p-3.5 z-40 text-xs text-wedding-100 animate-fade-in">
+                      <div className="font-semibold text-wedding-300 mb-2.5 border-b border-wedding-800 pb-1.5 flex items-center justify-between">
+                        <span>Configurações</span>
+                        <Sliders size={14} />
+                      </div>
+
+                      <div>
+                        <span className="text-[11px] text-wedding-400 block mb-1.5 font-sans uppercase tracking-wider">Velocidade de Reprodução</span>
+                        <div className="grid grid-cols-3 gap-1">
+                          {[0.5, 0.75, 1, 1.25, 1.5, 2].map((speedOption) => (
+                            <button
+                              key={speedOption}
+                              onClick={() => changeSpeed(speedOption)}
+                              className={`py-1 rounded-md text-center border transition-all ${
+                                playbackSpeed === speedOption 
+                                  ? 'bg-wedding-800 border-wedding-500 text-wedding-100 font-bold shadow-sm' 
+                                  : 'bg-wedding-950 border-wedding-800 hover:bg-wedding-800/50 text-wedding-300'
+                              }`}
+                            >
+                              {speedOption}x
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Tela Cheia / Sair do Fullscreen */}
+                <button
+                  onClick={toggleFullscreen}
+                  className="p-2 bg-wedding-900/70 border border-wedding-800/80 hover:bg-wedding-800/80 rounded-lg text-wedding-200 hover:text-wedding-100 transition-colors"
+                  title={isFullscreen ? "Sair da Tela Cheia" : "Tela Cheia"}
+                >
+                  {isFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Subtitles Overlay rendering if enabled */}
+      {subtitlesEnabled && !streamFailed && isPlaying && (
+        <div className="absolute bottom-20 left-1/2 transform -translate-x-1/2 bg-black/80 text-wedding-100 px-4 py-1.5 rounded-md text-xs sm:text-sm font-sans tracking-wide border border-wedding-700/50 pointer-events-none z-10 text-center">
+          ♪ [Jéssica & Felipe — Nosso Ensaio Pré-Wedding] ♪
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const PreWedding: React.FC = () => {
   const { pages } = useStore();
@@ -28,29 +368,6 @@ export const PreWedding: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [lightboxIndex, photos.length]);
 
-  const getEmbedUrl = (url: string) => {
-    if (!url) return { type: 'other', url: '' };
-
-    // YouTube matches (Shorts, standard, shared links)
-    const ytMatch = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/|youtube\.com\/shorts\/)([^"&?\/ ]{11})/i);
-    if (ytMatch) {
-      return { type: 'youtube', url: `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=0` };
-    }
-
-    // Vimeo matches
-    const vimeoMatch = url.match(/(?:vimeo\.com\/|player\.vimeo\.com\/video\/)([0-9]+)/i);
-    if (vimeoMatch) {
-      return { type: 'vimeo', url: `https://player.vimeo.com/video/${vimeoMatch[1]}` };
-    }
-
-    // Direct / Local video matches
-    if (url.match(/\.(mp4|webm|ogg|mov)(\?.*)?$/i) || url.includes('firebasestorage.googleapis.com') || url.includes('res.cloudinary.com')) {
-      return { type: 'direct', url };
-    }
-
-    return { type: 'other', url };
-  };
-
   const hasContent = photos.length > 0 || !!video;
 
   return (
@@ -59,7 +376,7 @@ export const PreWedding: React.FC = () => {
         
         {/* HEADER */}
         <div className="text-center mb-16">
-          <div className="bg-wedding-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 text-wedding-800">
+          <div className="bg-wedding-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 text-wedding-800 shadow-sm border border-wedding-200">
             <Camera size={40} />
           </div>
           <h1 className="font-script text-6xl text-wedding-800 mb-6">Ensaio Pré-Wedding</h1>
@@ -76,50 +393,11 @@ export const PreWedding: React.FC = () => {
             
             {/* VIDEO SECTION */}
             {video && (
-              <div className="max-w-4xl mx-auto bg-white p-4 rounded-3xl shadow-md border border-wedding-200">
-                <h3 className="font-serif text-2xl text-wedding-800 mb-4 text-center">Nosso Vídeo do Ensaio</h3>
-                
-                <div className="aspect-video w-full rounded-2xl overflow-hidden bg-black relative">
-                  {(() => {
-                    const parsedVideo = getEmbedUrl(video.url);
-                    if (parsedVideo.type === 'youtube' || parsedVideo.type === 'vimeo') {
-                      return (
-                        <iframe
-                          src={parsedVideo.url}
-                          title="Vídeo Pré-Wedding"
-                          className="w-full h-full border-0"
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                          allowFullScreen
-                        ></iframe>
-                      );
-                    } else if (parsedVideo.type === 'direct' || video.type === 'file') {
-                      return (
-                        <video 
-                          src={video.url} 
-                          controls 
-                          className="w-full h-full object-contain"
-                          poster={photos[0]?.url || ""}
-                        />
-                      );
-                    } else {
-                      // fallback link
-                      return (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center text-white p-6 text-center">
-                          <Play size={48} className="text-wedding-400 mb-4 animate-pulse" />
-                          <p className="font-serif text-lg mb-4">Assista ao nosso vídeo</p>
-                          <a 
-                            href={video.url} 
-                            target="_blank" 
-                            rel="noreferrer"
-                            className="bg-wedding-800 text-white font-serif px-6 py-2.5 rounded hover:bg-wedding-700 transition-colors inline-block"
-                          >
-                            Abrir Vídeo Externo
-                          </a>
-                        </div>
-                      );
-                    }
-                  })()}
-                </div>
+              <div className="max-w-4xl mx-auto bg-white p-6 sm:p-8 rounded-3xl shadow-xl border border-wedding-200 text-center">
+                <CustomWeddingPlayer 
+                  videoUrl={video.url} 
+                  posterUrl={photos[0]?.url} 
+                />
               </div>
             )}
 
@@ -243,3 +521,6 @@ export const PreWedding: React.FC = () => {
     </div>
   );
 };
+
+
+

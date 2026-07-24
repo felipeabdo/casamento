@@ -16,6 +16,23 @@ import {
 import { ref, deleteObject, uploadString, getDownloadURL } from 'firebase/storage';
 import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 
+function removeUndefinedFields<T>(obj: T): T {
+  if (obj === null || obj === undefined) return obj;
+  if (Array.isArray(obj)) {
+    return obj.map(item => removeUndefinedFields(item)) as unknown as T;
+  }
+  if (typeof obj === 'object') {
+    const cleaned: any = {};
+    for (const [key, value] of Object.entries(obj)) {
+      if (value !== undefined) {
+        cleaned[key] = removeUndefinedFields(value);
+      }
+    }
+    return cleaned as T;
+  }
+  return obj;
+}
+
 interface StoreContextType extends AppState {
   isAuthenticated: boolean;
   currentGuest: Guest | null;
@@ -538,19 +555,18 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   // PAGES
   const addPage = async (page: Page) => {
-    // Use slug as ID or random? Random is safer for collision, but page ID usage varies.
-    // Let's use Random ID provided by firestore, but we passed ID in object.
-    // Let's use the ID from the object if it exists (usually random UUID from Admin)
     const { id, ...pageData } = page;
+    const cleaned = removeUndefinedFields({ id, ...pageData });
     if (id) {
-        await setDoc(doc(db, "pages", id), { id, ...pageData });
+        await setDoc(doc(db, "pages", id), cleaned);
     } else {
-        await addDoc(collection(db, "pages"), pageData);
+        await addDoc(collection(db, "pages"), cleaned);
     }
   };
 
   const updatePage = async (id: string, updatedPage: Partial<Page>) => {
-    await updateDoc(doc(db, "pages", id), updatedPage);
+    const cleaned = removeUndefinedFields(updatedPage);
+    await setDoc(doc(db, "pages", id), cleaned, { merge: true });
   };
 
   const removePage = async (id: string) => {
